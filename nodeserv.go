@@ -38,6 +38,7 @@ const MaxServerID = 10
 const DefaultDuration int32 = 10 // need keepalive for each 10 sec.
 const MaxDurationCount = 3       // duration count.
 const defaultNodeInfoFile = "nodeinfo.json"
+const defaultSxProfile = "sxprofile.json"
 
 type eachNodeInfo struct {
 	NodeName  string    `json:"name"`
@@ -122,6 +123,18 @@ func getNextNodeID(sv bool) int32 {
 	return n
 }
 
+func loadSxProfile() {
+	bytes, err := ioutil.ReadFile(defaultSxProfile)
+	if err != nil {
+		log.Println("Error on reading sxprofile.json ",err)
+		return
+	}
+	jsonErr := json.Unmarshal(bytes, &sxProfile)
+	if jsonErr != nil {
+		log.Println("Can't unmarshall json ",jsonErr)
+		return
+	}
+}
 func loadNodeMap(s *srvNodeInfo){
 	nmmu.Lock() // not need..
 	bytes, err := ioutil.ReadFile(defaultNodeInfoFile)
@@ -140,7 +153,19 @@ func loadNodeMap(s *srvNodeInfo){
 		nodeLists[i].Info.LastAlive = time.Now()
 		s.nodeMap[ninfo.NodeId] = &nodeLists[i].Info
 	}
+	loadSxProfile()
 	nmmu.Unlock()
+}
+
+func saveSxProfile(){
+	bytes , err  :=json.MarshalIndent(sxProfile, "", "  ")
+	if err != nil {
+		log.Printf("Cant marshal sxprofile")
+	}
+	err = ioutil.WriteFile(defaultSxProfile, bytes, 0666)
+	if err != nil {
+		log.Println("Error on writing sxprofile.json ",err)
+	}
 }
 
 // saving nodemap
@@ -161,7 +186,7 @@ func saveNodeMap(s *srvNodeInfo){
 	if ferr != nil {
 		log.Println("Error on writing nodeinfo.json ",ferr)
 	}
-
+	saveSxProfile()
 	nmmu.Unlock()
 }
 
@@ -249,13 +274,26 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	nmmu.Lock()
 	s.nodeMap[n] = &eni
 	if ni.IsServer { // should register synerex_server profile.
-		sxProfile = append(sxProfile, SynerexServerInfo{
-			NodeId:n,
-			ServerAddress: ni.ServerAddress,
-			ChannelTypes: ni.ChannelTypes,
-			ClusterId: ni.ClusterId,
-			AreaId: ni.AreaId,
-		})
+		// check there is already that id
+		existFlag := false
+		for k , sx := range sxProfile {
+			if sx.NodeId == n { // if there is same
+				sxProfile[k].ServerAddress = ni.ServerAddress
+				sxProfile[k].ChannelTypes = ni.ChannelTypes
+				sxProfile[k].ClusterId = ni.ClusterId
+				sxProfile[k].AreaId = ni.AreaId
+				break
+			}
+		}
+		if !existFlag { // no exist server
+			sxProfile = append(sxProfile, SynerexServerInfo{
+				NodeId:        n,
+				ServerAddress: ni.ServerAddress,
+				ChannelTypes:  ni.ChannelTypes,
+				ClusterId:     ni.ClusterId,
+				AreaId:        ni.AreaId,
+			})
+		}
 	}
 	nmmu.Unlock()
 	log.Println("------------------------------------------------------")
@@ -333,12 +371,27 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 		return &nodepb.Response{Ok: false, Err: "Secret Failed"}, e
 	}
 
+	// we need to remove Server
+	if s.nodeMap[n].ServerAddress != "" { // this might be server
+		for k, sx := range sxProfile {
+			if sx.NodeId == n {
+				sxProfile = append(sxProfile[:k],sxProfile[k+1:]...)
+				break
+			}
+		}
+	}
+
 	log.Println("----------- Delete Node -----------", n, s.nodeMap[n].NodeName)
 	nmmu.Lock()
 	delete(s.nodeMap, n)
 	nmmu.Unlock()
 	s.listNodes()
 //	log.Println("------------------------------------------------------")
+
+
+
+
+
 	saveNodeMap(s)
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
