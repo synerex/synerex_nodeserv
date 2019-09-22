@@ -38,6 +38,7 @@ const MaxDurationCount = 3       // duration count.
 
 type eachNodeInfo struct {
 	nodeName  string
+	nodePbase string
 	secret    uint64
 	address   string
 	lastAlive time.Time
@@ -130,7 +131,7 @@ func (s *srvNodeInfo) listNodes() {
 	for i := range nk {
 		eni := s.nodeMap[nk[i]]
 		sub := time.Now().Sub(eni.lastAlive) / time.Second
-		log.Printf("ID: %4d %25s %14s %3d %2d:%3d %s\n", nk[i], eni.nodeName, eni.address, int(sub), eni.count, eni.status, eni.arg)
+		log.Printf("ID:%4d %20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.nodeName,eni.nodePbase, eni.address, int(sub), eni.count, eni.status, eni.arg)
 	}
 	nmmu.RUnlock()
 }
@@ -153,6 +154,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	}
 	eni := eachNodeInfo{
 		nodeName:  ni.NodeName,
+		nodePbase: ni.NodePbaseVersion,
 		secret:    r,
 		address:   ipaddr,
 		lastAlive: time.Now(),
