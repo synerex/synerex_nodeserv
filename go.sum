@@ -16,8 +16,8 @@ github.com/kardianos/osext v0.0.0-20170510131534-ae77be60afb1/go.mod h1:1NbS8ALr
 github.com/keybase/go-ps v0.0.0-20161005175911-668c8856d999/go.mod h1:hY+WOq6m2FpbvyrI93sMaypsttvaIL5nhVR92dTMUcQ=
 github.com/shirou/gopsutil v0.0.0-20180427012116-c95755e4bcd7/go.mod h1:5b4v6he4MtMOwMlS0TUMTu2PcXUg8+E1lC7eC3UO/RA=
 github.com/shirou/w32 v0.0.0-20160930032740-bb4de0191aa4/go.mod h1:qsXQc7+bwAM3Q1u/4XEfrquwF8Lw7D7y5cD8CuHnfIc=
-github.com/synerex/synerex_nodeapi v0.2.1 h1:PaC+GY5LTDE3R/I9K+SZinJu8De2uUVI/NiPHI+hbLA=
-github.com/synerex/synerex_nodeapi v0.2.1/go.mod h1:UM6Xrtb2oMti3AQ7uNR3bEcS2FHiQqsK2nKb97vZuYs=
+github.com/synerex/synerex_nodeapi v0.3.1 h1:8L9QoEx/JR80fYc/3IUewlc1z0gAJO9kp/8phiiMYMw=
+github.com/synerex/synerex_nodeapi v0.3.1/go.mod h1:UM6Xrtb2oMti3AQ7uNR3bEcS2FHiQqsK2nKb97vZuYs=
 github.com/xlab/treeprint v0.0.0-20180616005107-d6fb6747feb6/go.mod h1:ce1O1j6UtZfjr22oyGxGLbauSBp2YVXpARAosm7dHBg=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=

@@ -44,11 +44,21 @@ type eachNodeInfo struct {
 	NodePBase string    `json:"nodepbase"`
 	Secret    uint64    `json:"secret"`
 	Address   string    `json:"address"`
+	ServerAddress string `json:"serverAddress"`
+	ChannelTypes []uint32 `json:"channels"`
 	LastAlive time.Time `json:"lastAlive"`
 	Count     int32     `json:"count"`
 	Status    int32     `json:"status"`
 	Arg       string    `json:"arg"`
 	Duration  int32     `json:"duration"`  // duration for checking next time
+}
+
+type SynerexServerInfo struct {
+	NodeId int32 	`json:"nodeid"`
+	ServerAddress string
+	ChannelTypes []uint32
+	ClusterId int32
+	AreaId string
 }
 
 type nodeInfo struct{
@@ -64,6 +74,7 @@ var (
 	port      = flag.Int("port", 9990, "Node Server Listening Port")
 	restart	  = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
 	srvInfo   srvNodeInfo
+	sxProfile = make([]SynerexServerInfo,0,1)
 	lastNode  int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
 	lastPrint time.Time
 	nmmu      sync.RWMutex
@@ -125,7 +136,8 @@ func loadNodeMap(s *srvNodeInfo){
 		return
 	}
 	for i, ninfo := range nodeLists {
-		log.Printf("%d: %v\n",i,ninfo)
+//		log.Printf("%d: %v\n",i,ninfo)
+		nodeLists[i].Info.LastAlive = time.Now()
 		s.nodeMap[ninfo.NodeId] = &nodeLists[i].Info
 	}
 	nmmu.Unlock()
@@ -196,6 +208,16 @@ func (s *srvNodeInfo) listNodes() {
 	nmmu.RUnlock()
 }
 
+// looking for Synerex Server which support channels
+func getSynerexServer(chans []uint32) string{
+//TODO: should implement!
+// currently we just use first synerex server address
+	if len(sxProfile) > 0{
+		return sxProfile[0].ServerAddress
+	}
+	return ""
+}
+
 func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid *nodepb.NodeID, e error) {
 	// registration
 	n := getNextNodeID(ni.IsServer)
@@ -217,17 +239,34 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		NodePBase: ni.NodePbaseVersion,
 		Secret:    r,
 		Address:   ipaddr,
+		ServerAddress: ni.ServerAddress,
+		ChannelTypes: ni.ChannelTypes,
 		LastAlive: time.Now(),
 		Duration:  DefaultDuration,
 	}
+
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
 	nmmu.Lock()
 	s.nodeMap[n] = &eni
+	if ni.IsServer { // should register synerex_server profile.
+		sxProfile = append(sxProfile, SynerexServerInfo{
+			NodeId:n,
+			ServerAddress: ni.ServerAddress,
+			ChannelTypes: ni.ChannelTypes,
+			ClusterId: ni.ClusterId,
+			AreaId: ni.AreaId,
+		})
+	}
 	nmmu.Unlock()
 	log.Println("------------------------------------------------------")
 	s.listNodes()
 //	log.Println("------------------------------------------------------")
-	nid = &nodepb.NodeID{NodeId: n, Secret: r, KeepaliveDuration: eni.Duration}
+	nid = &nodepb.NodeID{
+		NodeId: n,
+		Secret: r,
+		ServerAddress: getSynerexServer(ni.ChannelTypes),
+		KeepaliveDuration: eni.Duration,
+	}
 	saveNodeMap(s)
 	return nid, nil
 }
@@ -237,7 +276,7 @@ func (s *srvNodeInfo) QueryNode(cx context.Context, nid *nodepb.NodeID) (ni *nod
 	eni, ok := s.nodeMap[n]
 	if !ok {
 		fmt.Println("QueryNode: Can't find Node ID:", n)
-		return nil, errors.New("Unregistered NodeID")
+		return nil, errors.New("unregistered NodeID")
 	}
 	ni = &nodepb.NodeInfo{NodeName: eni.NodeName}
 	return ni, nil
