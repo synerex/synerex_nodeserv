@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	nodepb "github.com/synerex/synerex_nodeapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -31,21 +33,27 @@ import (
 // MaxNodeNum  Max node Number
 const MaxNodeNum = 1024
 
-// MaxServerID  Max Market Server Node ID (Small number ID is for smarket server)
+// MaxServerID  Max Market Server Node ID (Small number ID is for synerex server)
 const MaxServerID = 10
 const DefaultDuration int32 = 10 // need keepalive for each 10 sec.
 const MaxDurationCount = 3       // duration count.
+const defaultNodeInfoFile = "nodeinfo.json"
 
 type eachNodeInfo struct {
-	nodeName  string
-	nodePbase string
-	secret    uint64
-	address   string
-	lastAlive time.Time
-	count     int32
-	status    int32
-	arg       string
-	duration  int32 // duration for checking next time
+	NodeName  string    `json:"name"`
+	NodePBase string    `json:"nodepbase"`
+	Secret    uint64    `json:"secret"`
+	Address   string    `json:"address"`
+	LastAlive time.Time `json:"lastAlive"`
+	Count     int32     `json:"count"`
+	Status    int32     `json:"status"`
+	Arg       string    `json:"arg"`
+	Duration  int32     `json:"duration"`  // duration for checking next time
+}
+
+type nodeInfo struct{
+	NodeId int32	`json:"nodeid"`
+	Info eachNodeInfo `json:"info"`
 }
 
 type srvNodeInfo struct {
@@ -54,6 +62,7 @@ type srvNodeInfo struct {
 
 var (
 	port      = flag.Int("port", 9990, "Node Server Listening Port")
+	restart	  = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
 	srvInfo   srvNodeInfo
 	lastNode  int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
 	lastPrint time.Time
@@ -70,6 +79,8 @@ func init() {
 }
 
 // find unused ID from map.
+// TODO: if nodeserv could be restarted, this might be problem.
+// we need to save current node information to some storage
 func getNextNodeID(sv bool) int32 {
 	var n int32
 	if sv {
@@ -100,21 +111,70 @@ func getNextNodeID(sv bool) int32 {
 	return n
 }
 
+func loadNodeMap(s *srvNodeInfo){
+	nmmu.Lock() // not need..
+	bytes, err := ioutil.ReadFile(defaultNodeInfoFile)
+	if err != nil {
+		log.Println("Error on reading nodeinfo.json ",err)
+		return
+	}
+	nodeLists := make([]nodeInfo, 0)
+	jsonErr := json.Unmarshal(bytes, &nodeLists)
+	if jsonErr != nil {
+		log.Println("Can't unmarshall json ",jsonErr)
+		return
+	}
+	for i, ninfo := range nodeLists {
+		log.Printf("%d: %v\n",i,ninfo)
+		s.nodeMap[ninfo.NodeId] = &nodeLists[i].Info
+	}
+	nmmu.Unlock()
+}
+
+// saving nodemap
+func saveNodeMap(s *srvNodeInfo){
+	nodeLists := make([]nodeInfo, len(s.nodeMap))
+//	file, err  := os.OpenFile(defaultNodeInfoFile, os.O_CREATE,  )
+	nmmu.Lock()
+	i :=0
+	for k, nif := range s.nodeMap {
+		nodeLists[i] = nodeInfo{ NodeId:k, Info:*nif}
+		i++
+	}
+	bytes, err := 	json.MarshalIndent(nodeLists, "", "  ")
+	if err != nil {
+		panic(0)
+	}
+	ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666 )
+	if ferr != nil {
+		log.Println("Error on writing nodeinfo.json ",ferr)
+	}
+
+	nmmu.Unlock()
+}
+
+// This is a monitoring loop for non keep-alive nodes.
 func keepNodes(s *srvNodeInfo) {
 	for {
 		time.Sleep(time.Second * time.Duration(DefaultDuration))
 		killNodes := make([]int32, 0)
 		nmmu.Lock()
 		for k, eni := range s.nodeMap {
-			sub := time.Now().Sub(eni.lastAlive) / time.Second
+			sub := time.Now().Sub(eni.LastAlive) / time.Second
 			if sub > time.Duration(MaxDurationCount*DefaultDuration) {
 				killNodes = append(killNodes, k)
 			}
 		}
+
+		// remove nodes
 		for _, k := range killNodes {
 			delete(s.nodeMap, k)
 		}
+		// flush nodelist
 		nmmu.Unlock()
+		if len(killNodes) > 0 {
+			saveNodeMap(s)
+		}
 	}
 }
 
@@ -130,8 +190,8 @@ func (s *srvNodeInfo) listNodes() {
 	sort.Slice(nk, func(i, j int) bool { return nk[i] < nk[j] })
 	for i := range nk {
 		eni := s.nodeMap[nk[i]]
-		sub := time.Now().Sub(eni.lastAlive) / time.Second
-		log.Printf("ID:%4d %20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.nodeName,eni.nodePbase, eni.address, int(sub), eni.count, eni.status, eni.arg)
+		sub := time.Now().Sub(eni.LastAlive) / time.Second
+		log.Printf("%4d %20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeName,eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
 	}
 	nmmu.RUnlock()
 }
@@ -153,19 +213,22 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		ipaddr = "0.0.0.0"
 	}
 	eni := eachNodeInfo{
-		nodeName:  ni.NodeName,
-		nodePbase: ni.NodePbaseVersion,
-		secret:    r,
-		address:   ipaddr,
-		lastAlive: time.Now(),
-		duration:  DefaultDuration,
+		NodeName:  ni.NodeName,
+		NodePBase: ni.NodePbaseVersion,
+		Secret:    r,
+		Address:   ipaddr,
+		LastAlive: time.Now(),
+		Duration:  DefaultDuration,
 	}
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
+	nmmu.Lock()
 	s.nodeMap[n] = &eni
+	nmmu.Unlock()
 	log.Println("------------------------------------------------------")
 	s.listNodes()
-	log.Println("------------------------------------------------------")
-	nid = &nodepb.NodeID{NodeId: n, Secret: r, KeepaliveDuration: eni.duration}
+//	log.Println("------------------------------------------------------")
+	nid = &nodepb.NodeID{NodeId: n, Secret: r, KeepaliveDuration: eni.Duration}
+	saveNodeMap(s)
 	return nid, nil
 }
 
@@ -176,7 +239,7 @@ func (s *srvNodeInfo) QueryNode(cx context.Context, nid *nodepb.NodeID) (ni *nod
 		fmt.Println("QueryNode: Can't find Node ID:", n)
 		return nil, errors.New("Unregistered NodeID")
 	}
-	ni = &nodepb.NodeInfo{NodeName: eni.nodeName}
+	ni = &nodepb.NodeInfo{NodeName: eni.NodeName}
 	return ni, nil
 }
 
@@ -185,7 +248,8 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 	r := nu.Secret
 	ni, ok := s.nodeMap[nid]
 	if !ok {
-		fmt.Println("Can't find node... It might be killed :", nid)
+		// TODO: For enhance security, we need to profile the provider which connect with wrong NodeID.
+		fmt.Println("Can't find node... nodeserv might be restarted or ... :", nid)
 		pr, ok := peer.FromContext(ctx)
 		var ipaddr string
 		if ok {
@@ -195,24 +259,24 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 		}
 		fmt.Println("Client from :", ipaddr)
 		fmt.Println("") // debug workaround
-		return &nodepb.Response{Ok: false, Err: "Killed at Nodeserv"}, e
+		return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_RECONNECT, Err: "Killed at Nodeserv"}, nil
 	}
-	if r != ni.secret {
+	if r != ni.Secret {
 		e = errors.New("Secret Failed")
 		return &nodepb.Response{Ok: false, Err: "Secret Failed"}, e
 	}
-	ni.lastAlive = time.Now()
-	ni.count = nu.UpdateCount
-	ni.status = nu.NodeStatus
-	ni.arg = nu.NodeArg
+	ni.LastAlive = time.Now()
+	ni.Count = nu.UpdateCount
+	ni.Status = nu.NodeStatus
+	ni.Arg = nu.NodeArg
 
-	if ni.lastAlive.Sub(lastPrint) > time.Second*time.Duration(DefaultDuration/2) {
+	if ni.LastAlive.Sub(lastPrint) > time.Second*time.Duration(DefaultDuration/2) {
 		log.Println("---KeepAlive------------------------------------------")
 		s.listNodes()
-		log.Println("------------------------------------------------------")
+//		log.Println("------------------------------------------------------")
 	}
 
-	return &nodepb.Response{Ok: true, Err: ""}, nil
+	return &nodepb.Response{Ok: true, Command: nodepb.KeepAliveCommand_NONE, Err: ""}, nil
 }
 
 func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr *nodepb.Response, e error) {
@@ -224,17 +288,19 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 		return &nodepb.Response{Ok: false, Err: "Killed at Nodeserv"}, e
 	}
 
-	if r != ni.secret { // secret failed
+	if r != ni.Secret { // secret failed
 		e = errors.New("Secret Failed")
 		log.Println("Invalid unregister")
 		return &nodepb.Response{Ok: false, Err: "Secret Failed"}, e
 	}
 
-	log.Println("----------- Delete Node -----------", n, s.nodeMap[n].nodeName)
+	log.Println("----------- Delete Node -----------", n, s.nodeMap[n].NodeName)
+	nmmu.Lock()
 	delete(s.nodeMap, n)
+	nmmu.Unlock()
 	s.listNodes()
-	log.Println("------------------------------------------------------")
-
+//	log.Println("------------------------------------------------------")
+	saveNodeMap(s)
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
 
@@ -250,6 +316,14 @@ func main() {
 	}
 
 	flag.Parse()
+
+	// loading nodeinfo from file
+	if *restart {
+		log.Printf("loading nodeinfo.json..\n")
+		loadNodeMap(&srvInfo)
+		srvInfo.listNodes()
+	}
+
 	//	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *port))
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
 
