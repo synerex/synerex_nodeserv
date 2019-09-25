@@ -45,6 +45,7 @@ type eachNodeInfo struct {
 	NodePBase string    `json:"nodepbase"`
 	Secret    uint64    `json:"secret"`
 	Address   string    `json:"address"`
+	NodeType   nodepb.NodeType    `json:"nodeType"`
 	ServerAddress string `json:"serverAddress"`
 	ChannelTypes []uint32 `json:"channels"`
 	LastAlive time.Time `json:"lastAlive"`
@@ -55,12 +56,20 @@ type eachNodeInfo struct {
 }
 
 type SynerexServerInfo struct {
+	NodeId       int32 	`json:"nodeid"`
+	ServerInfo   string
+	ChannelTypes []uint32
+	ClusterId    int32
+	AreaId       string
+}
+
+type SynerexGatewayInfo struct {
 	NodeId int32 	`json:"nodeid"`
-	ServerAddress string
 	ChannelTypes []uint32
 	ClusterId int32
 	AreaId string
 }
+
 
 type nodeInfo struct{
 	NodeId int32	`json:"nodeid"`
@@ -93,9 +102,9 @@ func init() {
 // find unused ID from map.
 // TODO: if nodeserv could be restarted, this might be problem.
 // we need to save current node information to some storage
-func getNextNodeID(sv bool) int32 {
+func getNextNodeID(nodeType nodepb.NodeType) int32 {
 	var n int32
-	if sv {
+	if nodeType == nodepb.NodeType_SERVER {
 		n = 0
 	} else {
 		n = lastNode
@@ -103,10 +112,10 @@ func getNextNodeID(sv bool) int32 {
 	nmmu.RLock()
 	for {
 		_, ok := srvInfo.nodeMap[n]
-		if !ok {
+		if !ok { // found empty nodeID.
 			break
 		}
-		if sv {
+		if nodeType == nodepb.NodeType_SERVER  {
 			n = (n + 1) % MaxServerID
 		} else {
 			n = (n-9)%(MaxNodeNum-MaxServerID) + MaxServerID
@@ -117,7 +126,7 @@ func getNextNodeID(sv bool) int32 {
 		}
 	}
 	nmmu.RUnlock()
-	if !sv {
+	if nodeType != nodepb.NodeType_SERVER  {
 		lastNode = n
 	}
 	return n
@@ -228,7 +237,7 @@ func (s *srvNodeInfo) listNodes() {
 	for i := range nk {
 		eni := s.nodeMap[nk[i]]
 		sub := time.Now().Sub(eni.LastAlive) / time.Second
-		log.Printf("%4d %20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeName,eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
+		log.Printf("%2d[%1d]%20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeType,eni.NodeName,eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
 	}
 	nmmu.RUnlock()
 }
@@ -238,14 +247,14 @@ func getSynerexServer(chans []uint32) string{
 //TODO: should implement!
 // currently we just use first synerex server address
 	if len(sxProfile) > 0{
-		return sxProfile[0].ServerAddress
+		return sxProfile[0].ServerInfo
 	}
 	return ""
 }
 
 func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid *nodepb.NodeID, e error) {
 	// registration
-	n := getNextNodeID(ni.IsServer)
+	n := getNextNodeID(ni.NodeType)
 	if n == -1 { // no extra node ID...
 		e = errors.New("No extra nodeID")
 		return nil, e
@@ -262,6 +271,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	eni := eachNodeInfo{
 		NodeName:  ni.NodeName,
 		NodePBase: ni.NodePbaseVersion,
+		NodeType: ni.NodeType,
 		Secret:    r,
 		Address:   ipaddr,
 		ServerAddress: ni.ServerAddress,
@@ -273,12 +283,12 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
 	nmmu.Lock()
 	s.nodeMap[n] = &eni
-	if ni.IsServer { // should register synerex_server profile.
+	if ni.NodeType == nodepb.NodeType_SERVER { // should register synerex_server profile.
 		// check there is already that id
 		existFlag := false
 		for k , sx := range sxProfile {
 			if sx.NodeId == n { // if there is same
-				sxProfile[k].ServerAddress = ni.ServerAddress
+				sxProfile[k].ServerInfo = ni.ServerAddress
 				sxProfile[k].ChannelTypes = ni.ChannelTypes
 				sxProfile[k].ClusterId = ni.ClusterId
 				sxProfile[k].AreaId = ni.AreaId
@@ -287,13 +297,15 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		}
 		if !existFlag { // no exist server
 			sxProfile = append(sxProfile, SynerexServerInfo{
-				NodeId:        n,
-				ServerAddress: ni.ServerAddress,
-				ChannelTypes:  ni.ChannelTypes,
-				ClusterId:     ni.ClusterId,
-				AreaId:        ni.AreaId,
+				NodeId:       n,
+				ServerInfo:   ni.ServerAddress,
+				ChannelTypes: ni.ChannelTypes,
+				ClusterId:    ni.ClusterId,
+				AreaId:       ni.AreaId,
 			})
 		}
+	}else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
+
 	}
 	nmmu.Unlock()
 	log.Println("------------------------------------------------------")
@@ -302,7 +314,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	nid = &nodepb.NodeID{
 		NodeId: n,
 		Secret: r,
-		ServerAddress: getSynerexServer(ni.ChannelTypes),
+		ServerInfo: getSynerexServer(ni.ChannelTypes),
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
