@@ -41,18 +41,18 @@ const defaultNodeInfoFile = "nodeinfo.json"
 const defaultSxProfile = "sxprofile.json"
 
 type eachNodeInfo struct {
-	NodeName  string    `json:"name"`
-	NodePBase string    `json:"nodepbase"`
-	Secret    uint64    `json:"secret"`
-	Address   string    `json:"address"`
-	NodeType   nodepb.NodeType    `json:"nodeType"`
-	ServerAddress string `json:"serverAddress"`
-	ChannelTypes []uint32 `json:"channels"`
-	LastAlive time.Time `json:"lastAlive"`
-	Count     int32     `json:"count"`
-	Status    int32     `json:"status"`
-	Arg       string    `json:"arg"`
-	Duration  int32     `json:"duration"`  // duration for checking next time
+	NodeName     string          `json:"name"`
+	NodePBase    string          `json:"nodepbase"`
+	Secret       uint64          `json:"secret"`
+	Address      string          `json:"address"`
+	NodeType     nodepb.NodeType `json:"nodeType"`
+	ServerInfo   string          `json:"serverInfo"`
+	ChannelTypes []uint32        `json:"channels"`
+	LastAlive    time.Time       `json:"lastAlive"`
+	Count        int32           `json:"count"`
+	Status       int32           `json:"status"`
+	Arg          string          `json:"arg"`
+	Duration     int32           `json:"duration"`  // duration for checking next time
 }
 
 type SynerexServerInfo struct {
@@ -65,9 +65,9 @@ type SynerexServerInfo struct {
 
 type SynerexGatewayInfo struct {
 	NodeId int32 	`json:"nodeid"`
+	GatewayInfo   string
+	GatewayType   int32
 	ChannelTypes []uint32
-	ClusterId int32
-	AreaId string
 }
 
 
@@ -269,15 +269,15 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		ipaddr = "0.0.0.0"
 	}
 	eni := eachNodeInfo{
-		NodeName:  ni.NodeName,
-		NodePBase: ni.NodePbaseVersion,
-		NodeType: ni.NodeType,
-		Secret:    r,
-		Address:   ipaddr,
-		ServerAddress: ni.ServerAddress,
+		NodeName:     ni.NodeName,
+		NodePBase:    ni.NodePbaseVersion,
+		NodeType:     ni.NodeType,
+		Secret:       r,
+		Address:      ipaddr,
+		ServerInfo:   ni.ServerInfo,
 		ChannelTypes: ni.ChannelTypes,
-		LastAlive: time.Now(),
-		Duration:  DefaultDuration,
+		LastAlive:    time.Now(),
+		Duration:     DefaultDuration,
 	}
 
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
@@ -288,7 +288,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		existFlag := false
 		for k , sx := range sxProfile {
 			if sx.NodeId == n { // if there is same
-				sxProfile[k].ServerInfo = ni.ServerAddress
+				sxProfile[k].ServerInfo = ni.ServerInfo
 				sxProfile[k].ChannelTypes = ni.ChannelTypes
 				sxProfile[k].ClusterId = ni.ClusterId
 				sxProfile[k].AreaId = ni.AreaId
@@ -298,7 +298,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		if !existFlag { // no exist server
 			sxProfile = append(sxProfile, SynerexServerInfo{
 				NodeId:       n,
-				ServerInfo:   ni.ServerAddress,
+				ServerInfo:   ni.ServerInfo,
 				ChannelTypes: ni.ChannelTypes,
 				ClusterId:    ni.ClusterId,
 				AreaId:       ni.AreaId,
@@ -384,7 +384,7 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	}
 
 	// we need to remove Server
-	if s.nodeMap[n].ServerAddress != "" { // this might be server
+	if s.nodeMap[n].ServerInfo != "" { // this might be server
 		for k, sx := range sxProfile {
 			if sx.NodeId == n {
 				sxProfile = append(sxProfile[:k],sxProfile[k+1:]...)
