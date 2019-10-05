@@ -15,3 +15,7 @@
 nodeinfo.json
 sxprofile.json
 
+# mac metadata
+.DS_Store
+
+nodeserv
