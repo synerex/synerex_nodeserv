@@ -61,6 +61,7 @@ type SynerexServerInfo struct {
 	ChannelTypes []uint32
 	ClusterId    int32
 	AreaId       string
+	NodeName     string
 }
 
 type SynerexGatewayInfo struct {
@@ -80,6 +81,11 @@ type srvNodeInfo struct {
 	nodeMap map[int32]*eachNodeInfo // map from nodeID to eachNodeInfo
 }
 
+type Maps struct{
+	Server   string	   `json:"server"`
+	Providers []string `json:"providers"`
+}
+
 var (
 	port      = flag.Int("port", 9990, "Node Server Listening Port")
 	restart	  = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
@@ -88,6 +94,8 @@ var (
 	lastNode  int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
 	lastPrint time.Time
 	nmmu      sync.RWMutex
+	srvprvfile string
+	srvprvmaps = make([]Maps,0,1)
 )
 
 func init() {
@@ -199,6 +207,20 @@ func saveNodeMap(s *srvNodeInfo){
 	nmmu.Unlock()
 }
 
+func loadSrvPrvMaps(){
+	srvprvfile = flag.Arg(0)
+	bytes, err := ioutil.ReadFile(srvprvfile)
+	if err != nil {
+		log.Println("Error on reading ServerProviderMaps ",err)
+		return
+	}
+	jsonErr := json.Unmarshal(bytes, &srvprvmaps)
+	if jsonErr != nil {
+		log.Println("Can't unmarshall json ",jsonErr)
+		return
+	}
+}
+
 // This is a monitoring loop for non keep-alive nodes.
 func keepNodes(s *srvNodeInfo) {
 	for {
@@ -242,12 +264,13 @@ func (s *srvNodeInfo) listNodes() {
 	nmmu.RUnlock()
 }
 
-// looking for Synerex Server which support channels
-func getSynerexServer(chans []uint32) string{
-//TODO: should implement!
-// currently we just use first synerex server address
-	if len(sxProfile) > 0{
-		return sxProfile[0].ServerInfo
+// looking for Synerex Server with given name
+func getSynerexServer(ServerName string) string{
+	for i := range sxProfile {
+		if ServerName == sxProfile[i].NodeName {
+			log.Printf("Server %s ServerInfo %s\n", ServerName,sxProfile[i].ServerInfo)
+			return(sxProfile[i].ServerInfo)
+		}
 	}
 	return ""
 }
@@ -292,6 +315,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				sxProfile[k].ChannelTypes = ni.ChannelTypes
 				sxProfile[k].ClusterId = ni.ClusterId
 				sxProfile[k].AreaId = ni.AreaId
+				sxProfile[k].NodeName = ni.NodeName
 				break
 			}
 		}
@@ -302,6 +326,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				ChannelTypes: ni.ChannelTypes,
 				ClusterId:    ni.ClusterId,
 				AreaId:       ni.AreaId,
+				NodeName:     ni.NodeName,
 			})
 		}
 	}else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
@@ -311,10 +336,31 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	log.Println("------------------------------------------------------")
 	s.listNodes()
 //	log.Println("------------------------------------------------------")
+
+// Getting Synerex Server name to be connected to
+	ServerName := ""
+	if ni.NodeType == nodepb.NodeType_SERVER {
+		ServerName = ni.NodeName
+	}else if ni.NodeType == nodepb.NodeType_GATEWAY {
+	}else{
+		for i := range srvprvmaps {
+			for j := range srvprvmaps[i].Providers {
+				if ni.NodeName == srvprvmaps[i].Providers[j]{
+					ServerName = srvprvmaps[i].Server
+					break
+				}
+			}
+			if ServerName != ""{
+				break
+			}
+		}
+		log.Printf("Server %s Provider %s\n",ServerName, ni.NodeName)
+	}
+
 	nid = &nodepb.NodeID{
 		NodeId: n,
 		Secret: r,
-		ServerInfo: getSynerexServer(ni.ChannelTypes),
+		ServerInfo: getSynerexServer(ServerName),
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
@@ -439,5 +485,8 @@ func main() {
 
 	nodeServer := prepareGrpcServer(opts...)
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
+
+	loadSrvPrvMaps()
+
 	nodeServer.Serve(lis)
 }
