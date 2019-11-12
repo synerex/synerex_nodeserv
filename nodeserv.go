@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -264,6 +265,25 @@ func (s *srvNodeInfo) listNodes() {
 	nmmu.RUnlock()
 }
 
+// looking for Synerex Server for GW
+func getSynerexServerForGw(ServerNames string) string{
+	servers := strings.Split(ServerNames,",")
+
+	serverInfos := ""
+
+	for i := range sxProfile {
+		for j := range servers {
+			if servers[j] == sxProfile[i].NodeName {
+				if serverInfos != "" {
+					serverInfos += ","
+				}
+				serverInfos += sxProfile[i].ServerInfo
+			}
+		}
+	}
+	return serverInfos
+}
+
 // looking for Synerex Server with given name
 func getSynerexServer(ServerName string) string{
 	for i := range sxProfile {
@@ -357,10 +377,18 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		log.Printf("Server %s Provider %s\n",ServerName, ni.NodeName)
 	}
 
+	serverInfo := ""
+
+	if ni.NodeType == nodepb.NodeType_GATEWAY {
+	    serverInfo = getSynerexServerForGw(ni.GwInfo)
+	} else {
+		serverInfo = getSynerexServer(ServerName)
+	}
+
 	nid = &nodepb.NodeID{
 		NodeId: n,
 		Secret: r,
-		ServerInfo: getSynerexServer(ServerName),
+		ServerInfo: serverInfo,
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
