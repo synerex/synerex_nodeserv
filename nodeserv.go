@@ -17,6 +17,9 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"bufio"
+	"os"
+	"strings"
 )
 
 //go:generate protoc -I ../nodeapi --go_out=paths=source_relative,plugins=grpc:../nodeapi ../nodeapi/nodeapi.proto
@@ -81,9 +84,9 @@ type srvNodeInfo struct {
 	nodeMap map[int32]*eachNodeInfo // map from nodeID to eachNodeInfo
 }
 
-type Maps struct{
-	Server   string	   `json:"server"`
-	Providers []string `json:"providers"`
+type ProviderConn struct{
+	Provider string
+	Server   string
 }
 
 var (
@@ -95,7 +98,8 @@ var (
 	lastPrint time.Time
 	nmmu      sync.RWMutex
 	srvprvfile string
-	srvprvmaps = make([]Maps,0,1)
+	ChangeSvrList = make([]ProviderConn,0,1) // in case change server request for providers
+	CurrConn = make([]ProviderConn,0,1)      // keep current provider -> server maps
 )
 
 func init() {
@@ -205,20 +209,6 @@ func saveNodeMap(s *srvNodeInfo){
 	}
 	saveSxProfile()
 	nmmu.Unlock()
-}
-
-func loadSrvPrvMaps(){
-	srvprvfile = flag.Arg(0)
-	bytes, err := ioutil.ReadFile(srvprvfile)
-	if err != nil {
-		log.Println("Error on reading ServerProviderMaps ",err)
-		return
-	}
-	jsonErr := json.Unmarshal(bytes, &srvprvmaps)
-	if jsonErr != nil {
-		log.Println("Can't unmarshall json ",jsonErr)
-		return
-	}
 }
 
 // This is a monitoring loop for non keep-alive nodes.
@@ -343,18 +333,16 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		ServerName = ni.NodeName
 	}else if ni.NodeType == nodepb.NodeType_GATEWAY {
 	}else{
-		for i := range srvprvmaps {
-			for j := range srvprvmaps[i].Providers {
-				if ni.NodeName == srvprvmaps[i].Providers[j]{
-					ServerName = srvprvmaps[i].Server
-					break
-				}
-			}
-			if ServerName != ""{
+		for k := range ChangeSvrList {
+			if ni.NodeName == ChangeSvrList[k].Provider {
+				ServerName = ChangeSvrList[k].Server
+				ChangeSvrList = append(ChangeSvrList[:k],ChangeSvrList[k+1:]...)
 				break
 			}
 		}
-		log.Printf("Server %s Provider %s\n",ServerName, ni.NodeName)
+		if ServerName == ""{
+			ServerName = sxProfile[0].NodeName
+		}
 	}
 
 	nid = &nodepb.NodeID{
@@ -364,6 +352,25 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
+
+// Maintain current Server Provider Map
+	if ni.NodeType == nodepb.NodeType_PROVIDER {
+		existFlag := false
+		for ii := range CurrConn {
+			if CurrConn[ii].Provider == ni.NodeName {
+				CurrConn[ii].Server =  ServerName
+				existFlag = true
+				break
+			}
+		}
+		if !existFlag {
+			CurrConn = append(CurrConn, ProviderConn{
+				Provider:     ni.NodeName,
+				Server:       ServerName,
+			})
+		}
+	}
+
 	return nid, nil
 }
 
@@ -411,6 +418,17 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 //		log.Println("------------------------------------------------------")
 	}
 
+// Returning SERVER_CHANGE command if threre is server change request for the provider
+	for k := range ChangeSvrList {
+		if ni.NodeName == ChangeSvrList[k].Provider {
+
+			log.Printf("Returning SERVER_CHANGE command for %s connected to %s\n ",
+					ChangeSvrList[k].Provider,ChangeSvrList[k].Server)
+
+			return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
+		}
+	}
+
 	return &nodepb.Response{Ok: true, Command: nodepb.KeepAliveCommand_NONE, Err: ""}, nil
 }
 
@@ -447,9 +465,6 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 //	log.Println("------------------------------------------------------")
 
 
-
-
-
 	saveNodeMap(s)
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
@@ -458,6 +473,34 @@ func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 	nodeServer := grpc.NewServer(opts...)
 	nodepb.RegisterNodeServer(nodeServer, &srvInfo)
 	return nodeServer
+}
+
+// read server change requests like ProviderA -> ServerB
+func GetServerChangeInput(){
+	for {
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		Input    := scanner.Text()
+		PrvSvr   := strings.Split(Input,"->")
+		Provider := strings.TrimSpace(PrvSvr[0])
+		Server   := strings.TrimSpace(PrvSvr[1])
+
+		ChangeSvrList = append(ChangeSvrList, ProviderConn{
+			Provider:     Provider,
+			Server:       Server,
+		})
+	}
+}
+
+// Output Current Server Provider Maps
+func OutputCurrentSP(){
+	for {
+		log.Printf("Current Server Provider Maps\n")
+		for _, sp := range CurrConn {
+			log.Printf("%s connected to %s\n", sp.Provider,sp.Server)
+		}
+		time.Sleep(time.Second * 10)
+	}
 }
 
 func main() {
@@ -486,7 +529,8 @@ func main() {
 	nodeServer := prepareGrpcServer(opts...)
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
 
-	loadSrvPrvMaps()
+	go GetServerChangeInput()
+	go OutputCurrentSP()
 
 	nodeServer.Serve(lis)
 }
