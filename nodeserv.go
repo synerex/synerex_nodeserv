@@ -20,7 +20,6 @@ import (
 	"time"
 	"bufio"
 	"os"
-	"strings"
 )
 
 //go:generate protoc -I ../nodeapi --go_out=paths=source_relative,plugins=grpc:../nodeapi ../nodeapi/nodeapi.proto
