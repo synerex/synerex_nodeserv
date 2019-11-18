@@ -6,10 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/google/gops/agent"
-	nodepb "github.com/synerex/synerex_nodeapi"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/peer"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -18,8 +14,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"bufio"
-	"os"
+
+	"github.com/google/gops/agent"
+	nodepb "github.com/synerex/synerex_nodeapi"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 )
 
 //go:generate protoc -I ../nodeapi --go_out=paths=source_relative,plugins=grpc:../nodeapi ../nodeapi/nodeapi.proto
@@ -55,11 +54,11 @@ type eachNodeInfo struct {
 	Count        int32           `json:"count"`
 	Status       int32           `json:"status"`
 	Arg          string          `json:"arg"`
-	Duration     int32           `json:"duration"`  // duration for checking next time
+	Duration     int32           `json:"duration"` // duration for checking next time
 }
 
 type SynerexServerInfo struct {
-	NodeId       int32 	`json:"nodeid"`
+	NodeId       int32 `json:"nodeid"`
 	ServerInfo   string
 	ChannelTypes []uint32
 	ClusterId    int32
@@ -68,38 +67,40 @@ type SynerexServerInfo struct {
 }
 
 type SynerexGatewayInfo struct {
-	NodeId int32 	`json:"nodeid"`
-	GatewayInfo   string
-	GatewayType   int32
+	NodeId       int32 `json:"nodeid"`
+	GatewayInfo  string
+	GatewayType  int32
 	ChannelTypes []uint32
 }
 
-
-type nodeInfo struct{
-	NodeId int32	`json:"nodeid"`
-	Info eachNodeInfo `json:"info"`
+type nodeInfo struct {
+	NodeId int32        `json:"nodeid"`
+	Info   eachNodeInfo `json:"info"`
 }
 
 type srvNodeInfo struct {
 	nodeMap map[int32]*eachNodeInfo // map from nodeID to eachNodeInfo
 }
 
-type ProviderConn struct{
+/*
+type ProviderConn struct {
 	Provider string
 	Server   string
 }
+*/
 
 var (
-	port      = flag.Int("port", 9990, "Node Server Listening Port")
-	restart	  = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
-	srvInfo   srvNodeInfo
-	sxProfile = make([]SynerexServerInfo,0,1)
-	lastNode  int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
-	lastPrint time.Time
-	nmmu      sync.RWMutex
+	port       = flag.Int("port", 9990, "Node Server Listening Port")
+	restart    = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
+	srvInfo    srvNodeInfo
+	sxProfile        = make([]SynerexServerInfo, 0, 1)
+	lastNode   int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
+	lastPrint  time.Time
+	nmmu       sync.RWMutex
 	srvprvfile string
-	ChangeSvrList = make([]ProviderConn,0,1) // in case change server request for providers
-	CurrConn = make([]ProviderConn,0,1)      // keep current provider -> server maps
+
+//	ChangeSvrList = make([]ProviderConn, 0, 1) // in case change server request for providers
+//	CurrConn      = make([]ProviderConn, 0, 1) // keep current provider -> server maps
 )
 
 func init() {
@@ -127,7 +128,7 @@ func getNextNodeID(nodeType nodepb.NodeType) int32 {
 		if !ok { // found empty nodeID.
 			break
 		}
-		if nodeType == nodepb.NodeType_SERVER  {
+		if nodeType == nodepb.NodeType_SERVER {
 			n = (n + 1) % MaxServerID
 		} else {
 			n = (n-9)%(MaxNodeNum-MaxServerID) + MaxServerID
@@ -138,7 +139,7 @@ func getNextNodeID(nodeType nodepb.NodeType) int32 {
 		}
 	}
 	nmmu.RUnlock()
-	if nodeType != nodepb.NodeType_SERVER  {
+	if nodeType != nodepb.NodeType_SERVER {
 		lastNode = n
 	}
 	return n
@@ -147,30 +148,30 @@ func getNextNodeID(nodeType nodepb.NodeType) int32 {
 func loadSxProfile() {
 	bytes, err := ioutil.ReadFile(defaultSxProfile)
 	if err != nil {
-		log.Println("Error on reading sxprofile.json ",err)
+		log.Println("Error on reading sxprofile.json ", err)
 		return
 	}
 	jsonErr := json.Unmarshal(bytes, &sxProfile)
 	if jsonErr != nil {
-		log.Println("Can't unmarshall json ",jsonErr)
+		log.Println("Can't unmarshall json ", jsonErr)
 		return
 	}
 }
-func loadNodeMap(s *srvNodeInfo){
+func loadNodeMap(s *srvNodeInfo) {
 	nmmu.Lock() // not need..
 	bytes, err := ioutil.ReadFile(defaultNodeInfoFile)
 	if err != nil {
-		log.Println("Error on reading nodeinfo.json ",err)
+		log.Println("Error on reading nodeinfo.json ", err)
 		return
 	}
 	nodeLists := make([]nodeInfo, 0)
 	jsonErr := json.Unmarshal(bytes, &nodeLists)
 	if jsonErr != nil {
-		log.Println("Can't unmarshall json ",jsonErr)
+		log.Println("Can't unmarshall json ", jsonErr)
 		return
 	}
 	for i, ninfo := range nodeLists {
-//		log.Printf("%d: %v\n",i,ninfo)
+		//		log.Printf("%d: %v\n",i,ninfo)
 		nodeLists[i].Info.LastAlive = time.Now()
 		s.nodeMap[ninfo.NodeId] = &nodeLists[i].Info
 	}
@@ -178,34 +179,34 @@ func loadNodeMap(s *srvNodeInfo){
 	nmmu.Unlock()
 }
 
-func saveSxProfile(){
-	bytes , err  :=json.MarshalIndent(sxProfile, "", "  ")
+func saveSxProfile() {
+	bytes, err := json.MarshalIndent(sxProfile, "", "  ")
 	if err != nil {
 		log.Printf("Cant marshal sxprofile")
 	}
 	err = ioutil.WriteFile(defaultSxProfile, bytes, 0666)
 	if err != nil {
-		log.Println("Error on writing sxprofile.json ",err)
+		log.Println("Error on writing sxprofile.json ", err)
 	}
 }
 
 // saving nodemap
-func saveNodeMap(s *srvNodeInfo){
+func saveNodeMap(s *srvNodeInfo) {
 	nodeLists := make([]nodeInfo, len(s.nodeMap))
-//	file, err  := os.OpenFile(defaultNodeInfoFile, os.O_CREATE,  )
+	//	file, err  := os.OpenFile(defaultNodeInfoFile, os.O_CREATE,  )
 	nmmu.Lock()
-	i :=0
+	i := 0
 	for k, nif := range s.nodeMap {
-		nodeLists[i] = nodeInfo{ NodeId:k, Info:*nif}
+		nodeLists[i] = nodeInfo{NodeId: k, Info: *nif}
 		i++
 	}
-	bytes, err := 	json.MarshalIndent(nodeLists, "", "  ")
+	bytes, err := json.MarshalIndent(nodeLists, "", "  ")
 	if err != nil {
 		panic(0)
 	}
-	ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666 )
+	ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666)
 	if ferr != nil {
-		log.Println("Error on writing nodeinfo.json ",ferr)
+		log.Println("Error on writing nodeinfo.json ", ferr)
 	}
 	saveSxProfile()
 	nmmu.Unlock()
@@ -249,14 +250,14 @@ func (s *srvNodeInfo) listNodes() {
 	for i := range nk {
 		eni := s.nodeMap[nk[i]]
 		sub := time.Now().Sub(eni.LastAlive) / time.Second
-		log.Printf("%2d[%1d]%20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeType,eni.NodeName,eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
+		log.Printf("%2d[%1d]%20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeType, eni.NodeName, eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
 	}
 	nmmu.RUnlock()
 }
 
 // looking for Synerex Server for GW
-func getSynerexServerForGw(ServerNames string) string{
-	servers := strings.Split(ServerNames,",")
+func getSynerexServerForGw(ServerNames string) string {
+	servers := strings.Split(ServerNames, ",")
 
 	serverInfos := ""
 
@@ -274,11 +275,11 @@ func getSynerexServerForGw(ServerNames string) string{
 }
 
 // looking for Synerex Server with given name
-func getSynerexServer(ServerName string) string{
+func getSynerexServer(ServerName string) string {
 	for i := range sxProfile {
 		if ServerName == sxProfile[i].NodeName {
-			log.Printf("Server %s ServerInfo %s\n", ServerName,sxProfile[i].ServerInfo)
-			return(sxProfile[i].ServerInfo)
+			log.Printf("Server %s ServerInfo %s\n", ServerName, sxProfile[i].ServerInfo)
+			return (sxProfile[i].ServerInfo)
 		}
 	}
 	return ""
@@ -318,7 +319,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	if ni.NodeType == nodepb.NodeType_SERVER { // should register synerex_server profile.
 		// check there is already that id
 		existFlag := false
-		for k , sx := range sxProfile {
+		for k, sx := range sxProfile {
 			if sx.NodeId == n { // if there is same
 				sxProfile[k].ServerInfo = ni.ServerInfo
 				sxProfile[k].ChannelTypes = ni.ChannelTypes
@@ -338,28 +339,30 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				NodeName:     ni.NodeName,
 			})
 		}
-	}else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
+	} else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
 
 	}
 	nmmu.Unlock()
 	log.Println("------------------------------------------------------")
 	s.listNodes()
-//	log.Println("------------------------------------------------------")
+	//	log.Println("------------------------------------------------------")
 
-// Getting Synerex Server name to be connected to
+	// Getting Synerex Server name to be connected to
 	ServerName := ""
 	if ni.NodeType == nodepb.NodeType_SERVER {
 		ServerName = ni.NodeName
-	}else if ni.NodeType == nodepb.NodeType_GATEWAY {
-	}else{
-		for k := range ChangeSvrList {
-			if ni.NodeName == ChangeSvrList[k].Provider {
-				ServerName = ChangeSvrList[k].Server
-				ChangeSvrList = append(ChangeSvrList[:k],ChangeSvrList[k+1:]...)
-				break
+	} else if ni.NodeType == nodepb.NodeType_GATEWAY {
+	} else {
+		/*
+			for k := range ChangeSvrList {
+				if ni.NodeName == ChangeSvrList[k].Provider {
+					ServerName = ChangeSvrList[k].Server
+					ChangeSvrList = append(ChangeSvrList[:k], ChangeSvrList[k+1:]...)
+					break
+				}
 			}
-		}
-		if ServerName == ""{
+		*/
+		if ServerName == "" {
 			ServerName = sxProfile[0].NodeName
 		}
 	}
@@ -367,36 +370,38 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	serverInfo := ""
 
 	if ni.NodeType == nodepb.NodeType_GATEWAY {
-	    serverInfo = getSynerexServerForGw(ni.GwInfo)
+		serverInfo = getSynerexServerForGw(ni.GwInfo)
 	} else {
 		serverInfo = getSynerexServer(ServerName)
 	}
 
 	nid = &nodepb.NodeID{
-		NodeId: n,
-		Secret: r,
-		ServerInfo: serverInfo,
+		NodeId:            n,
+		Secret:            r,
+		ServerInfo:        serverInfo,
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
 
-// Maintain current Server Provider Map
-	if ni.NodeType == nodepb.NodeType_PROVIDER {
-		existFlag := false
-		for ii := range CurrConn {
-			if CurrConn[ii].Provider == ni.NodeName {
-				CurrConn[ii].Server =  ServerName
-				existFlag = true
-				break
+	// Maintain current Server Provider Map
+	/*
+		if ni.NodeType == nodepb.NodeType_PROVIDER {
+			existFlag := false
+			for ii := range CurrConn {
+				if CurrConn[ii].Provider == ni.NodeName {
+					CurrConn[ii].Server = ServerName
+					existFlag = true
+					break
+				}
+			}
+			if !existFlag {
+				CurrConn = append(CurrConn, ProviderConn{
+					Provider: ni.NodeName,
+					Server:   ServerName,
+				})
 			}
 		}
-		if !existFlag {
-			CurrConn = append(CurrConn, ProviderConn{
-				Provider:     ni.NodeName,
-				Server:       ServerName,
-			})
-		}
-	}
+	*/
 
 	return nid, nil
 }
@@ -442,19 +447,21 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 	if ni.LastAlive.Sub(lastPrint) > time.Second*time.Duration(DefaultDuration/2) {
 		log.Println("---KeepAlive------------------------------------------")
 		s.listNodes()
-//		log.Println("------------------------------------------------------")
+		//		log.Println("------------------------------------------------------")
 	}
 
-// Returning SERVER_CHANGE command if threre is server change request for the provider
-	for k := range ChangeSvrList {
-		if ni.NodeName == ChangeSvrList[k].Provider {
+	// Returning SERVER_CHANGE command if threre is server change request for the provider
+	/*
+		for k := range ChangeSvrList {
+			if ni.NodeName == ChangeSvrList[k].Provider {
 
-			log.Printf("Returning SERVER_CHANGE command for %s connected to %s\n ",
-					ChangeSvrList[k].Provider,ChangeSvrList[k].Server)
+				log.Printf("Returning SERVER_CHANGE command for %s connected to %s\n ",
+					ChangeSvrList[k].Provider, ChangeSvrList[k].Server)
 
-			return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
+				return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
+			}
 		}
-	}
+	*/
 
 	return &nodepb.Response{Ok: true, Command: nodepb.KeepAliveCommand_NONE, Err: ""}, nil
 }
@@ -478,7 +485,7 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	if s.nodeMap[n].ServerInfo != "" { // this might be server
 		for k, sx := range sxProfile {
 			if sx.NodeId == n {
-				sxProfile = append(sxProfile[:k],sxProfile[k+1:]...)
+				sxProfile = append(sxProfile[:k], sxProfile[k+1:]...)
 				break
 			}
 		}
@@ -489,8 +496,7 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	delete(s.nodeMap, n)
 	nmmu.Unlock()
 	s.listNodes()
-//	log.Println("------------------------------------------------------")
-
+	//	log.Println("------------------------------------------------------")
 
 	saveNodeMap(s)
 	return &nodepb.Response{Ok: true, Err: ""}, nil
@@ -503,32 +509,34 @@ func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 }
 
 // read server change requests like ProviderA -> ServerB
-func GetServerChangeInput(){
+/*
+func GetServerChangeInput() {
 	for {
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
-		Input    := scanner.Text()
-		PrvSvr   := strings.Split(Input,"->")
+		Input := scanner.Text()
+		PrvSvr := strings.Split(Input, "->")
 		Provider := strings.TrimSpace(PrvSvr[0])
-		Server   := strings.TrimSpace(PrvSvr[1])
+		Server := strings.TrimSpace(PrvSvr[1])
 
 		ChangeSvrList = append(ChangeSvrList, ProviderConn{
-			Provider:     Provider,
-			Server:       Server,
+			Provider: Provider,
+			Server:   Server,
 		})
 	}
 }
 
 // Output Current Server Provider Maps
-func OutputCurrentSP(){
+func OutputCurrentSP() {
 	for {
 		log.Printf("Current Server Provider Maps\n")
 		for _, sp := range CurrConn {
-			log.Printf("%s connected to %s\n", sp.Provider,sp.Server)
+			log.Printf("%s connected to %s\n", sp.Provider, sp.Server)
 		}
 		time.Sleep(time.Second * 10)
 	}
 }
+*/
 
 func main() {
 	if gerr := agent.Listen(agent.Options{}); gerr != nil {
@@ -556,8 +564,9 @@ func main() {
 	nodeServer := prepareGrpcServer(opts...)
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
 
-	go GetServerChangeInput()
-	go OutputCurrentSP()
-
+	// umm. we should omit them.
+	/*	go GetServerChangeInput()
+		go OutputCurrentSP()
+	*/
 	nodeServer.Serve(lis)
 }
