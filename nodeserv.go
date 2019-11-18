@@ -15,8 +15,11 @@ import (
 	"math/rand"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+	"bufio"
+	"os"
 )
 
 //go:generate protoc -I ../nodeapi --go_out=paths=source_relative,plugins=grpc:../nodeapi ../nodeapi/nodeapi.proto
@@ -61,6 +64,7 @@ type SynerexServerInfo struct {
 	ChannelTypes []uint32
 	ClusterId    int32
 	AreaId       string
+	NodeName     string
 }
 
 type SynerexGatewayInfo struct {
@@ -80,6 +84,11 @@ type srvNodeInfo struct {
 	nodeMap map[int32]*eachNodeInfo // map from nodeID to eachNodeInfo
 }
 
+type ProviderConn struct{
+	Provider string
+	Server   string
+}
+
 var (
 	port      = flag.Int("port", 9990, "Node Server Listening Port")
 	restart	  = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
@@ -88,6 +97,9 @@ var (
 	lastNode  int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
 	lastPrint time.Time
 	nmmu      sync.RWMutex
+	srvprvfile string
+	ChangeSvrList = make([]ProviderConn,0,1) // in case change server request for providers
+	CurrConn = make([]ProviderConn,0,1)      // keep current provider -> server maps
 )
 
 func init() {
@@ -242,12 +254,32 @@ func (s *srvNodeInfo) listNodes() {
 	nmmu.RUnlock()
 }
 
-// looking for Synerex Server which support channels
-func getSynerexServer(chans []uint32) string{
-//TODO: should implement!
-// currently we just use first synerex server address
-	if len(sxProfile) > 0{
-		return sxProfile[0].ServerInfo
+// looking for Synerex Server for GW
+func getSynerexServerForGw(ServerNames string) string{
+	servers := strings.Split(ServerNames,",")
+
+	serverInfos := ""
+
+	for i := range sxProfile {
+		for j := range servers {
+			if servers[j] == sxProfile[i].NodeName {
+				if serverInfos != "" {
+					serverInfos += ","
+				}
+				serverInfos += sxProfile[i].ServerInfo
+			}
+		}
+	}
+	return serverInfos
+}
+
+// looking for Synerex Server with given name
+func getSynerexServer(ServerName string) string{
+	for i := range sxProfile {
+		if ServerName == sxProfile[i].NodeName {
+			log.Printf("Server %s ServerInfo %s\n", ServerName,sxProfile[i].ServerInfo)
+			return(sxProfile[i].ServerInfo)
+		}
 	}
 	return ""
 }
@@ -292,6 +324,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				sxProfile[k].ChannelTypes = ni.ChannelTypes
 				sxProfile[k].ClusterId = ni.ClusterId
 				sxProfile[k].AreaId = ni.AreaId
+				sxProfile[k].NodeName = ni.NodeName
 				break
 			}
 		}
@@ -302,6 +335,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				ChannelTypes: ni.ChannelTypes,
 				ClusterId:    ni.ClusterId,
 				AreaId:       ni.AreaId,
+				NodeName:     ni.NodeName,
 			})
 		}
 	}else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
@@ -311,13 +345,59 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	log.Println("------------------------------------------------------")
 	s.listNodes()
 //	log.Println("------------------------------------------------------")
+
+// Getting Synerex Server name to be connected to
+	ServerName := ""
+	if ni.NodeType == nodepb.NodeType_SERVER {
+		ServerName = ni.NodeName
+	}else if ni.NodeType == nodepb.NodeType_GATEWAY {
+	}else{
+		for k := range ChangeSvrList {
+			if ni.NodeName == ChangeSvrList[k].Provider {
+				ServerName = ChangeSvrList[k].Server
+				ChangeSvrList = append(ChangeSvrList[:k],ChangeSvrList[k+1:]...)
+				break
+			}
+		}
+		if ServerName == ""{
+			ServerName = sxProfile[0].NodeName
+		}
+	}
+
+	serverInfo := ""
+
+	if ni.NodeType == nodepb.NodeType_GATEWAY {
+	    serverInfo = getSynerexServerForGw(ni.GwInfo)
+	} else {
+		serverInfo = getSynerexServer(ServerName)
+	}
+
 	nid = &nodepb.NodeID{
 		NodeId: n,
 		Secret: r,
-		ServerInfo: getSynerexServer(ni.ChannelTypes),
+		ServerInfo: serverInfo,
 		KeepaliveDuration: eni.Duration,
 	}
 	saveNodeMap(s)
+
+// Maintain current Server Provider Map
+	if ni.NodeType == nodepb.NodeType_PROVIDER {
+		existFlag := false
+		for ii := range CurrConn {
+			if CurrConn[ii].Provider == ni.NodeName {
+				CurrConn[ii].Server =  ServerName
+				existFlag = true
+				break
+			}
+		}
+		if !existFlag {
+			CurrConn = append(CurrConn, ProviderConn{
+				Provider:     ni.NodeName,
+				Server:       ServerName,
+			})
+		}
+	}
+
 	return nid, nil
 }
 
@@ -365,6 +445,17 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 //		log.Println("------------------------------------------------------")
 	}
 
+// Returning SERVER_CHANGE command if threre is server change request for the provider
+	for k := range ChangeSvrList {
+		if ni.NodeName == ChangeSvrList[k].Provider {
+
+			log.Printf("Returning SERVER_CHANGE command for %s connected to %s\n ",
+					ChangeSvrList[k].Provider,ChangeSvrList[k].Server)
+
+			return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
+		}
+	}
+
 	return &nodepb.Response{Ok: true, Command: nodepb.KeepAliveCommand_NONE, Err: ""}, nil
 }
 
@@ -401,9 +492,6 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 //	log.Println("------------------------------------------------------")
 
 
-
-
-
 	saveNodeMap(s)
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
@@ -412,6 +500,34 @@ func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 	nodeServer := grpc.NewServer(opts...)
 	nodepb.RegisterNodeServer(nodeServer, &srvInfo)
 	return nodeServer
+}
+
+// read server change requests like ProviderA -> ServerB
+func GetServerChangeInput(){
+	for {
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		Input    := scanner.Text()
+		PrvSvr   := strings.Split(Input,"->")
+		Provider := strings.TrimSpace(PrvSvr[0])
+		Server   := strings.TrimSpace(PrvSvr[1])
+
+		ChangeSvrList = append(ChangeSvrList, ProviderConn{
+			Provider:     Provider,
+			Server:       Server,
+		})
+	}
+}
+
+// Output Current Server Provider Maps
+func OutputCurrentSP(){
+	for {
+		log.Printf("Current Server Provider Maps\n")
+		for _, sp := range CurrConn {
+			log.Printf("%s connected to %s\n", sp.Provider,sp.Server)
+		}
+		time.Sleep(time.Second * 10)
+	}
 }
 
 func main() {
@@ -439,5 +555,9 @@ func main() {
 
 	nodeServer := prepareGrpcServer(opts...)
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
+
+	go GetServerChangeInput()
+	go OutputCurrentSP()
+
 	nodeServer.Serve(lis)
 }
