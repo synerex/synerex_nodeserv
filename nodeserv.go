@@ -482,7 +482,7 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	}
 
 	// we need to remove Server
-	if s.nodeMap[n].ServerInfo != "" { // this might be server
+	if ni.NodeType == nodepb.NodeType_SERVER { // this might be server
 		for k, sx := range sxProfile {
 			if sx.NodeId == n {
 				sxProfile = append(sxProfile[:k], sxProfile[k+1:]...)
