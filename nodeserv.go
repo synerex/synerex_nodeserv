@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/google/gops/agent"
 	nodepb "github.com/synerex/synerex_nodeapi"
+	nodecapi "github.com/synerex/synerex_nodeserv_controlapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 	"io/ioutil"
@@ -408,9 +409,45 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
 
+func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeInfoFilter) (ni *nodecapi.NodeInfos, e error) {
+	log.Println("QueryNodeInfos")
+
+	n := nodecapi.NodeInfo{
+		NodeName:             "",
+		NodeType:             0,
+		ServerInfo:           "",
+		NodePbaseVersion:     "",
+		WithNodeId:           0,
+		ClusterId:            0,
+		AreaId:               "",
+		ChannelTypes:         nil,
+		GwInfo:               "",
+		NodeId:               0,
+		ServerId:             0,
+	}
+
+	ns := nodecapi.NodeInfos{
+		Infos:                nil,
+	}
+
+	ns.Infos = 	make([]*nodecapi.NodeInfo, 0)
+	ns.Infos = append(ns.Infos, &n)
+
+	return &ns, nil
+}
+
+func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res *nodecapi.Response, e error) {
+	log.Println("ControlNodes")
+	r := nodecapi.Response{
+		Ok:                   true,
+	}
+	return &r, nil
+}
+
 func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 	nodeServer := grpc.NewServer(opts...)
 	nodepb.RegisterNodeServer(nodeServer, &srvInfo)
+	nodecapi.RegisterNodeControlServer(nodeServer, &srvInfo)
 	return nodeServer
 }
 
