@@ -1,0 +1,11 @@
+[
+       {
+         "server" : "ServerA",
+         "providers" : ["ProviderA", "ProviderB", "ProviderC"]
+       },
+       {
+         "server" : "ServerB",
+         "providers" : ["ProviderD", "ProviderE"]
+       }
+]
+
