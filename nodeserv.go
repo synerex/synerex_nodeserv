@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/gops/agent"
 	nodepb "github.com/synerex/synerex_nodeapi"
+	nodecapi "github.com/synerex/synerex_nodeserv_controlapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 )
@@ -82,13 +83,6 @@ type srvNodeInfo struct {
 	nodeMap map[int32]*eachNodeInfo // map from nodeID to eachNodeInfo
 }
 
-/*
-type ProviderConn struct {
-	Provider string
-	Server   string
-}
-*/
-
 var (
 	port       = flag.Int("port", 9990, "Node Server Listening Port")
 	restart    = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
@@ -98,9 +92,6 @@ var (
 	lastPrint  time.Time
 	nmmu       sync.RWMutex
 	srvprvfile string
-
-//	ChangeSvrList = make([]ProviderConn, 0, 1) // in case change server request for providers
-//	CurrConn      = make([]ProviderConn, 0, 1) // keep current provider -> server maps
 )
 
 func init() {
@@ -274,11 +265,11 @@ func getSynerexServerForGw(ServerNames string) string {
 	return serverInfos
 }
 
-// looking for Synerex Server with given name
-func getSynerexServer(ServerName string) string {
+// looking for Synerex Server with given Id
+func getSynerexServer(ServerId int32) string {
 	for i := range sxProfile {
-		if ServerName == sxProfile[i].NodeName {
-			log.Printf("Server %s ServerInfo %s\n", ServerName, sxProfile[i].ServerInfo)
+		if ServerId == sxProfile[i].NodeId {
+			log.Printf("Server %d ServerInfo %s\n", ServerId, sxProfile[i].ServerInfo)
 			return (sxProfile[i].ServerInfo)
 		}
 	}
@@ -347,24 +338,13 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	s.listNodes()
 	//	log.Println("------------------------------------------------------")
 
-	// Getting Synerex Server name to be connected to
-	ServerName := ""
+	// Getting Synerex Server to be connected to
+	var ServerId int32 = 0
 	if ni.NodeType == nodepb.NodeType_SERVER {
-		ServerName = ni.NodeName
+		ServerId = n
 	} else if ni.NodeType == nodepb.NodeType_GATEWAY {
 	} else {
-		/*
-			for k := range ChangeSvrList {
-				if ni.NodeName == ChangeSvrList[k].Provider {
-					ServerName = ChangeSvrList[k].Server
-					ChangeSvrList = append(ChangeSvrList[:k], ChangeSvrList[k+1:]...)
-					break
-				}
-			}
-		*/
-		if ServerName == "" {
-			ServerName = sxProfile[0].NodeName
-		}
+		ServerId = GetServerIdForPrv(n)
 	}
 
 	serverInfo := ""
@@ -372,7 +352,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	if ni.NodeType == nodepb.NodeType_GATEWAY {
 		serverInfo = getSynerexServerForGw(ni.GwInfo)
 	} else {
-		serverInfo = getSynerexServer(ServerName)
+		serverInfo = getSynerexServer(ServerId)
 	}
 
 	nid = &nodepb.NodeID{
@@ -383,25 +363,9 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	}
 	saveNodeMap(s)
 
-	// Maintain current Server Provider Map
-	/*
-		if ni.NodeType == nodepb.NodeType_PROVIDER {
-			existFlag := false
-			for ii := range CurrConn {
-				if CurrConn[ii].Provider == ni.NodeName {
-					CurrConn[ii].Server = ServerName
-					existFlag = true
-					break
-				}
-			}
-			if !existFlag {
-				CurrConn = append(CurrConn, ProviderConn{
-					Provider: ni.NodeName,
-					Server:   ServerName,
-				})
-			}
-		}
-	*/
+	if ni.NodeType == nodepb.NodeType_PROVIDER {
+		UpdateConnectionMap(n,ServerId)
+	}
 
 	return nid, nil
 }
@@ -451,17 +415,10 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 	}
 
 	// Returning SERVER_CHANGE command if threre is server change request for the provider
-	/*
-		for k := range ChangeSvrList {
-			if ni.NodeName == ChangeSvrList[k].Provider {
-
-				log.Printf("Returning SERVER_CHANGE command for %s connected to %s\n ",
-					ChangeSvrList[k].Provider, ChangeSvrList[k].Server)
-
-				return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
-			}
-		}
-	*/
+	if IsServerChangeRequest(nid) {
+		log.Printf("Returning SERVER_CHANGE command\n")
+		return &nodepb.Response{Ok: false, Command: nodepb.KeepAliveCommand_SERVER_CHANGE, Err: ""}, nil
+	}
 
 	return &nodepb.Response{Ok: true, Command: nodepb.KeepAliveCommand_NONE, Err: ""}, nil
 }
@@ -502,41 +459,102 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
 
+func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeInfoFilter) (ni *nodecapi.NodeInfos, e error) {
+	log.Println("QueryNodeInfos")
+
+	var ninfo = make([]nodecapi.NodeInfo, 0, 1)
+
+	var ServerId  int32
+	var ClusterId int32
+	var AreaId    string
+	var NodeType  nodecapi.NodeType
+
+	ns := nodecapi.NodeInfos{
+		Infos:                nil,
+	}
+
+	ns.Infos = make([]*nodecapi.NodeInfo, 0)
+
+	all_flag := true
+	if filter.NodeType == nodecapi.NodeType_SERVER ||
+	   filter.NodeType == nodecapi.NodeType_PROVIDER ||
+	   filter.NodeType == nodecapi.NodeType_GATEWAY  {
+		all_flag = false
+	}
+
+	count := 0
+	for n, nif := range s.nodeMap {
+		if all_flag ||
+		   ( filter.NodeType == nodecapi.NodeType_PROVIDER &&
+		     nif.NodeType == nodepb.NodeType_PROVIDER ) ||
+		   ( filter.NodeType == nodecapi.NodeType_SERVER &&
+		     nif.NodeType == nodepb.NodeType_SERVER ) ||
+		   ( filter.NodeType == nodecapi.NodeType_GATEWAY &&
+		     nif.NodeType == nodepb.NodeType_GATEWAY ) {
+
+			ServerId  = n
+			ClusterId = 0
+			AreaId    = ""
+
+			if nif.NodeType == nodepb.NodeType_PROVIDER {
+				NodeType = nodecapi.NodeType_PROVIDER
+				ServerId = GetConnectSvrId(n)
+			} else if nif.NodeType == nodepb.NodeType_SERVER {
+				NodeType = nodecapi.NodeType_SERVER
+				for k, sx := range sxProfile {
+					if sx.NodeId == n {
+						ClusterId    = sxProfile[k].ClusterId
+						AreaId       = sxProfile[k].AreaId
+						break
+					}
+				}
+			} else if nif.NodeType == nodepb.NodeType_SERVER {
+				NodeType = nodecapi.NodeType_GATEWAY
+			}
+
+			ninfo = append(ninfo, nodecapi.NodeInfo{
+				NodeName:	  nif.NodeName,
+				NodeType:	  NodeType,
+				ServerInfo:       nif.ServerInfo,
+				NodePbaseVersion: nif.NodePBase,
+				WithNodeId:       0,
+				ClusterId:        ClusterId,
+				AreaId:           AreaId,
+				ChannelTypes:     nif.ChannelTypes,
+				GwInfo:           "",
+				NodeId:           n,
+				ServerId:         ServerId,
+			})
+			ns.Infos = append(ns.Infos, &ninfo[count])
+			count = count+1
+		}
+	}
+
+	return &ns, nil
+}
+
+func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res *nodecapi.Response, e error) {
+	log.Println("ControlNodes")
+
+	if in.OrderType == nodecapi.OrderType_SWITCH_SERVER {
+		Provider := in.TargetNode.NodeId
+		Server := in.GetSwitchInfo().SxServer.NodeId
+		log.Printf("%d switch to %d\n", Provider, Server)
+		AddServerChangeRequest(Provider, Server)
+	}
+
+	r := nodecapi.Response{
+		Ok:                   true,
+	}
+	return &r, nil
+}
+
 func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 	nodeServer := grpc.NewServer(opts...)
 	nodepb.RegisterNodeServer(nodeServer, &srvInfo)
+	nodecapi.RegisterNodeControlServer(nodeServer, &srvInfo)
 	return nodeServer
 }
-
-// read server change requests like ProviderA -> ServerB
-/*
-func GetServerChangeInput() {
-	for {
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		Input := scanner.Text()
-		PrvSvr := strings.Split(Input, "->")
-		Provider := strings.TrimSpace(PrvSvr[0])
-		Server := strings.TrimSpace(PrvSvr[1])
-
-		ChangeSvrList = append(ChangeSvrList, ProviderConn{
-			Provider: Provider,
-			Server:   Server,
-		})
-	}
-}
-
-// Output Current Server Provider Maps
-func OutputCurrentSP() {
-	for {
-		log.Printf("Current Server Provider Maps\n")
-		for _, sp := range CurrConn {
-			log.Printf("%s connected to %s\n", sp.Provider, sp.Server)
-		}
-		time.Sleep(time.Second * 10)
-	}
-}
-*/
 
 func main() {
 	if gerr := agent.Listen(agent.Options{}); gerr != nil {
@@ -564,9 +582,5 @@ func main() {
 	nodeServer := prepareGrpcServer(opts...)
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
 
-	// umm. we should omit them.
-	/*	go GetServerChangeInput()
-		go OutputCurrentSP()
-	*/
 	nodeServer.Serve(lis)
 }
