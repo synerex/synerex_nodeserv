@@ -18,4 +18,6 @@ sxprofile.json
 # mac metadata
 .DS_Store
 
+*~
+
 nodeserv
