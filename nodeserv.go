@@ -278,7 +278,13 @@ func getSynerexServer(ServerId int32) string {
 
 func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid *nodepb.NodeID, e error) {
 	// registration
-	n := getNextNodeID(ni.NodeType)
+	n := int32(-1)
+	if ni.WithNodeId == -1 {
+		n = getNextNodeID(ni.NodeType)
+	} else {
+		n = ni.WithNodeId
+	}
+
 	if n == -1 { // no extra node ID...
 		e = errors.New("No extra nodeID")
 		return nil, e
