@@ -64,6 +64,7 @@ type SynerexServerInfo struct {
 	ClusterId    int32
 	AreaId       string
 	NodeName     string
+	PendingNodes []int32 // Pending for close subscription nodes for next KeepAlive
 }
 
 type SynerexGatewayInfo struct {
@@ -126,12 +127,24 @@ func getNextNodeID(nodeType nodepb.NodeType) int32 {
 	for {
 		_, ok := srvInfo.nodeMap[n]
 		if !ok { // found empty nodeID.
-			break
+			// we need to check pending nodes (for Close Subscription)
+			flag := true
+			for i := range sxProfile {
+				for j := range sxProfile[i].PendingNodes {
+					if sxProfile[i].PendingNodes[j] == n {
+						flag = false // still pending node!
+						break
+					}
+				}
+			}
+			if flag {
+				break
+			}
 		}
 		if nodeType == nodepb.NodeType_SERVER {
 			n = (n + 1) % MaxServerID
 		} else {
-			n = (n-9)%(MaxNodeNum-MaxServerID) + MaxServerID
+			n = (n-MaxServerID+1)%(MaxNodeNum-MaxServerID) + MaxServerID
 		}
 		if n == lastNode || n == 0 { // loop
 			nmmu.RUnlock()
@@ -212,6 +225,31 @@ func saveNodeMap(s *srvNodeInfo) {
 	nmmu.Unlock()
 }
 
+func appendNonDup(base []int32, add []int32) []int32 {
+	for i := range add {
+		flag := true
+		for j := range base {
+			if add[i] == base[j] {
+				flag = false
+				break
+			}
+		}
+		if flag {
+			base = append(base, add[i])
+		}
+	}
+	return base
+}
+
+// add Pending Nodes of synerex-servers with killed nodes
+// for non-keep alive providers
+func addPendingNodesToServers(killNodes []int32) {
+	for i := range sxProfile {
+		sxProfile[i].PendingNodes = appendNonDup(sxProfile[i].PendingNodes, killNodes)
+	}
+
+}
+
 // This is a monitoring loop for non keep-alive nodes.
 func keepNodes(s *srvNodeInfo) {
 	for {
@@ -225,11 +263,15 @@ func keepNodes(s *srvNodeInfo) {
 			}
 		}
 
-		// remove nodes
-		for _, k := range killNodes {
-			delete(s.nodeMap, k)
+		if len(killNodes) > 0 {
+			// remove nodes
+			// flush nodelist
+			for _, k := range killNodes {
+				delete(s.nodeMap, k)
+			}
+			// we need to notify killed nodes to synerex server to clean channels
+			addPendingNodesToServers(killNodes)
 		}
-		// flush nodelist
 		nmmu.Unlock()
 		if len(killNodes) > 0 {
 			saveNodeMap(s)
@@ -337,6 +379,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				ClusterId:    ni.ClusterId,
 				AreaId:       ni.AreaId,
 				NodeName:     ni.NodeName,
+				PendingNodes: []int32{},
 			})
 		}
 	} else if ni.NodeType == nodepb.NodeType_GATEWAY { // gateway!
@@ -362,7 +405,8 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 				}
 			}
 		*/
-		if ServerName == "" {
+		if ServerName == "" { // currently connect first server..(should)
+			// TODO: fix to connect appropriate synerex-server
 			ServerName = sxProfile[0].NodeName
 		}
 	}
@@ -450,6 +494,22 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 		//		log.Println("------------------------------------------------------")
 	}
 
+	if ni.NodeType == nodepb.NodeType_SERVER { // if there is pending nodes, send them!
+		for i := range sxProfile {
+			if sxProfile[i].NodeId == nid {
+				if len(sxProfile[i].PendingNodes) > 0 {
+					bytes, _ := json.Marshal(sxProfile[i].PendingNodes)
+					sxProfile[i].PendingNodes = []int32{} // clean nodes
+					return &nodepb.Response{
+						Ok:      true,
+						Command: nodepb.KeepAliveCommand_PROVIDER_DISCONNECT,
+						Err:     string(bytes),
+					}, nil
+				}
+				break
+			}
+		}
+	}
 	// Returning SERVER_CHANGE command if threre is server change request for the provider
 	/*
 		for k := range ChangeSvrList {
