@@ -409,7 +409,11 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		*/
 		if ServerName == "" { // currently connect first server..(should)
 			// TODO: fix to connect appropriate synerex-server
-			ServerName = sxProfile[0].NodeName
+			if len(sxProfile)== 0 {
+				ServerName = "no-synerex-server"
+			}else{
+				ServerName = sxProfile[0].NodeName
+			}
 		}
 	}
 
