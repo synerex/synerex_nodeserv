@@ -246,6 +246,7 @@ func appendNonDup(base []int32, add []int32) []int32 {
 func addPendingNodesToServers(killNodes []int32) {
 	for i := range sxProfile {
 		sxProfile[i].PendingNodes = appendNonDup(sxProfile[i].PendingNodes, killNodes)
+		fmt.Printf("SxProfile[%d] = %v", i, sxProfile[i].PendingNodes)
 	}
 
 }
@@ -266,6 +267,7 @@ func keepNodes(s *srvNodeInfo) {
 		if len(killNodes) > 0 {
 			// remove nodes
 			// flush nodelist
+			log.Printf("Kill Nodes by SynerexServer Timeout %#v",killNodes)
 			for _, k := range killNodes {
 				delete(s.nodeMap, k)
 			}
@@ -495,11 +497,13 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 	}
 
 	if ni.NodeType == nodepb.NodeType_SERVER { // if there is pending nodes, send them!
+//		log.Printf("KeepAlive from Server %#v", ni)
 		for i := range sxProfile {
 			if sxProfile[i].NodeId == nid {
 				if len(sxProfile[i].PendingNodes) > 0 {
 					bytes, _ := json.Marshal(sxProfile[i].PendingNodes)
 					sxProfile[i].PendingNodes = []int32{} // clean nodes
+					log.Printf("Sending Pending Nodes to SxServ %s", string(bytes))
 					return &nodepb.Response{
 						Ok:      true,
 						Command: nodepb.KeepAliveCommand_PROVIDER_DISCONNECT,
@@ -508,6 +512,7 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 				}
 				break
 			}
+			log.Printf("Can't find nid profile server %d != %d", nid, sxProfile[0].NodeId)
 		}
 	}
 	// Returning SERVER_CHANGE command if threre is server change request for the provider
