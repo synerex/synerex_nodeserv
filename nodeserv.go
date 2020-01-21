@@ -269,6 +269,16 @@ func keepNodes(s *srvNodeInfo) {
 			// flush nodelist
 			log.Printf("Kill Nodes by SynerexServer Timeout %#v",killNodes)
 			for _, k := range killNodes {
+				// we need to remove k from sxProfile
+				ni := s.nodeMap[k]
+				if ni.NodeType == nodepb.NodeType_SERVER { // remove server from sxProfile
+					for jj, sv := range sxProfile{
+						if sv.NodeId == k {
+							sxProfile = append(sxProfile[:jj], sxProfile[jj+1:]...)
+							break
+						}
+					}
+				}
 				delete(s.nodeMap, k)
 			}
 			// we need to notify killed nodes to synerex server to clean channels
@@ -516,7 +526,6 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 				}
 				break
 			}
-			log.Printf("Can't find nid profile server %d != %d", nid, sxProfile[0].NodeId)
 		}
 	}
 	// Returning SERVER_CHANGE command if threre is server change request for the provider
