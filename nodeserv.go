@@ -529,37 +529,35 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 	return &nodepb.Response{Ok: true, Err: ""}, nil
 }
 
-func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeInfoFilter) (ni *nodecapi.NodeInfos, e error) {
-	log.Println("QueryNodeInfos")
-
-	var ninfo = make([]nodecapi.NodeInfo, 0, 1)
+func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeControlFilter) (ni *nodecapi.NodeControlInfos, e error) {
+	var ninfo = make([]nodecapi.NodeControlInfo, 0, 1)
 
 	var ServerId  int32
 	var ClusterId int32
 	var AreaId    string
-	var NodeType  nodecapi.NodeType
+	var NodeType  nodepb.NodeType
 
-	ns := nodecapi.NodeInfos{
+	ns := nodecapi.NodeControlInfos{
 		Infos:                nil,
 	}
 
-	ns.Infos = make([]*nodecapi.NodeInfo, 0)
+	ns.Infos = make([]*nodecapi.NodeControlInfo, 0)
 
 	all_flag := true
-	if filter.NodeType == nodecapi.NodeType_SERVER ||
-	   filter.NodeType == nodecapi.NodeType_PROVIDER ||
-	   filter.NodeType == nodecapi.NodeType_GATEWAY  {
+	if filter.NodeType == nodepb.NodeType_SERVER ||
+	   filter.NodeType == nodepb.NodeType_PROVIDER ||
+	   filter.NodeType == nodepb.NodeType_GATEWAY  {
 		all_flag = false
 	}
 
 	count := 0
 	for n, nif := range s.nodeMap {
 		if all_flag ||
-		   ( filter.NodeType == nodecapi.NodeType_PROVIDER &&
+		   ( filter.NodeType == nodepb.NodeType_PROVIDER &&
 		     nif.NodeType == nodepb.NodeType_PROVIDER ) ||
-		   ( filter.NodeType == nodecapi.NodeType_SERVER &&
+		   ( filter.NodeType == nodepb.NodeType_SERVER &&
 		     nif.NodeType == nodepb.NodeType_SERVER ) ||
-		   ( filter.NodeType == nodecapi.NodeType_GATEWAY &&
+		   ( filter.NodeType == nodepb.NodeType_GATEWAY &&
 		     nif.NodeType == nodepb.NodeType_GATEWAY ) {
 
 			ServerId  = n
@@ -567,10 +565,10 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeIn
 			AreaId    = ""
 
 			if nif.NodeType == nodepb.NodeType_PROVIDER {
-				NodeType = nodecapi.NodeType_PROVIDER
+				NodeType = nodepb.NodeType_PROVIDER
 				ServerId = GetConnectSvrId(n)
 			} else if nif.NodeType == nodepb.NodeType_SERVER {
-				NodeType = nodecapi.NodeType_SERVER
+				NodeType = nodepb.NodeType_SERVER
 				for k, sx := range sxProfile {
 					if sx.NodeId == n {
 						ClusterId    = sxProfile[k].ClusterId
@@ -579,19 +577,21 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeIn
 					}
 				}
 			} else if nif.NodeType == nodepb.NodeType_SERVER {
-				NodeType = nodecapi.NodeType_GATEWAY
+				NodeType = nodepb.NodeType_GATEWAY
 			}
 
-			ninfo = append(ninfo, nodecapi.NodeInfo{
-				NodeName:	  nif.NodeName,
-				NodeType:	  NodeType,
-				ServerInfo:       nif.ServerInfo,
-				NodePbaseVersion: nif.NodePBase,
-				WithNodeId:       0,
-				ClusterId:        ClusterId,
-				AreaId:           AreaId,
-				ChannelTypes:     nif.ChannelTypes,
-				GwInfo:           "",
+			ninfo = append(ninfo, nodecapi.NodeControlInfo {
+				NodeInfo: &nodepb.NodeInfo {
+					NodeName:         nif.NodeName,
+					NodeType:         NodeType,
+					ServerInfo:       nif.ServerInfo,
+					NodePbaseVersion: nif.NodePBase,
+					WithNodeId:       0,
+					ClusterId:        ClusterId,
+					AreaId:           AreaId,
+					ChannelTypes:     nif.ChannelTypes,
+					GwInfo:           "",
+				},
 				NodeId:           n,
 				ServerId:         ServerId,
 			})
@@ -603,8 +603,7 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeIn
 	return &ns, nil
 }
 
-func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res *nodecapi.Response, e error) {
-	log.Println("ControlNodes")
+func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res *nodecapi.NodeControlResponse, e error) {
 
 	if in.OrderType == nodecapi.OrderType_SWITCH_SERVER {
 		Provider := in.TargetNode.NodeId
@@ -613,7 +612,7 @@ func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res
 		AddServerChangeRequest(Provider, Server)
 	}
 
-	r := nodecapi.Response{
+	r := nodecapi.NodeControlResponse{
 		Ok:                   true,
 	}
 	return &r, nil

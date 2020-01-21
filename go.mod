@@ -13,7 +13,7 @@ require (
 	github.com/shirou/gopsutil v2.19.11+incompatible // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/synerex/synerex_nodeapi v0.5.1
-	github.com/synerex/synerex_nodeserv_controlapi v0.0.4
+	github.com/synerex/synerex_nodeserv_controlapi v0.0.5
 	github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca // indirect
 	go.opencensus.io v0.22.2 // indirect
 	golang.org/x/crypto v0.0.0-20191227163750-53104e6ec876 // indirect

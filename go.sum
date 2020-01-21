@@ -53,6 +53,8 @@ github.com/synerex/synerex_nodeapi v0.5.1 h1:jIKKg/7T7WndmWCcCWnDFxMS2Hvw8qk7hzx
 github.com/synerex/synerex_nodeapi v0.5.1/go.mod h1:sYy5L5wF9nqUwH+TFHPg0zL8NVF8HX3bq9qJa9XkXjI=
 github.com/synerex/synerex_nodeserv_controlapi v0.0.4 h1:Qrm7z1nFs2uFMhAjMI8ekrmOrrEhGpd0++8c+97Nm7I=
 github.com/synerex/synerex_nodeserv_controlapi v0.0.4/go.mod h1:XOUmM6Bnk8Wm+UerlQ+E5QSzMuotavRV3PBOcXhZkio=
+github.com/synerex/synerex_nodeserv_controlapi v0.0.5 h1:OvWiTtAsFVENtEnD/1BOBVxUfWQTXAiIEzPI8/YOmok=
+github.com/synerex/synerex_nodeserv_controlapi v0.0.5/go.mod h1:RhipHeTqZYua1JjqOZwv+XnwobDV8R+f4GAJALEVDZg=
 github.com/xlab/treeprint v0.0.0-20180616005107-d6fb6747feb6/go.mod h1:ce1O1j6UtZfjr22oyGxGLbauSBp2YVXpARAosm7dHBg=
 github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca/go.mod h1:ce1O1j6UtZfjr22oyGxGLbauSBp2YVXpARAosm7dHBg=
 go.opencensus.io v0.22.2/go.mod h1:yxeiOL68Rb0Xd1ddK5vPZ/oVn4vY4Ynel7k9FzqtOIw=
