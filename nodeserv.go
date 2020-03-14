@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -87,6 +88,7 @@ type srvNodeInfo struct {
 
 var (
 	port       = flag.Int("port", 9990, "Node Server Listening Port")
+	version    = flag.Bool("version", false, "show version")
 	verbose    = flag.Bool("verbose", false, "show detailed modules information")
 	restart    = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
 	srvInfo    srvNodeInfo
@@ -95,6 +97,13 @@ var (
 	lastPrint  time.Time
 	nmmu       sync.RWMutex
 	srvprvfile string
+)
+
+// for embedding git variables
+var (
+	sha1ver   string // sha1 version used to build the program
+	buildTime string // when the executable was built
+	gitver    string // git release tag
 )
 
 func init() {
@@ -637,11 +646,31 @@ func prepareGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 }
 
 func main() {
+	// get debug information
+	bi, ok := debug.ReadBuildInfo()
+	flag.Parse()
+	if ok {
+		if *verbose {
+			log.Printf("%s(%s) built %s sha1 %s", bi.Main.Path, gitver, buildTime, sha1ver)
+			for i := range bi.Deps {
+				m := bi.Deps[i]
+				log.Printf("%d: %s(%s)", i, m.Path, m.Version)
+			}
+
+		} else {
+			log.Printf("%s(%s) built %s sha1 %s", bi.Main.Path, gitver, buildTime, sha1ver)
+		}
+		if *version {
+			os.Exit(0)
+		}
+		//
+	} else {
+		log.Printf("Can't obtain build info.")
+	}
+
 	if gerr := agent.Listen(agent.Options{}); gerr != nil {
 		log.Fatal(gerr)
 	}
-
-	flag.Parse()
 
 	// loading nodeinfo from file
 	if *restart {
@@ -655,24 +684,6 @@ func main() {
 
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
-	}
-
-	// get debug information
-	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		if *verbose {
-			log.Printf("Nodeserv version %s(%s)", bi.Main.Path, bi.Main.Version)
-			for i := range bi.Deps {
-				m := bi.Deps[i]
-				log.Printf("%d: %s(%s)", i, m.Path, m.Version)
-			}
-
-		} else {
-			log.Printf("Nodeserv version %s(%s)", bi.Main.Path, bi.Main.Version)
-		}
-		//
-	} else {
-		log.Printf("Can't obtain build info.")
 	}
 
 	var opts []grpc.ServerOption
