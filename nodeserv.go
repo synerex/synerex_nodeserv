@@ -347,7 +347,15 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	if ni.WithNodeId == -1 {
 		n = getNextNodeID(ni.NodeType)
 	} else {
-		n = ni.WithNodeId
+		// we need to check duplicate node_id
+		_, ok := s.nodeMap[ni.WithNodeId]
+		if ok {
+			nn := getNextNodeID(ni.NodeType)
+			log.Printf("Duplicated node id request. Ignore %d and assign id %d",ni.WithNodeId, nn)
+			n = nn
+		}else {
+			n = ni.WithNodeId
+		}
 	}
 
 	if n == -1 { // no extra node ID...
@@ -377,6 +385,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
 	nmmu.Lock()
+
 	s.nodeMap[n] = &eni
 	if ni.NodeType == nodepb.NodeType_SERVER { // should register synerex_server profile.
 		// check there is already that id
