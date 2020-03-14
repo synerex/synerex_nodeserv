@@ -3,6 +3,7 @@ module nodeserv
 go 1.13
 
 require (
+	github.com/golang/protobuf v1.3.2
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/google/gops v0.3.6
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
@@ -12,7 +13,7 @@ require (
 	github.com/rogpeppe/go-internal v1.5.1 // indirect
 	github.com/shirou/gopsutil v2.19.11+incompatible // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/synerex/synerex_nodeapi v0.5.1
+	github.com/synerex/synerex_nodeapi v0.5.3
 	github.com/synerex/synerex_nodeserv_controlapi v0.0.5
 	github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca // indirect
 	go.opencensus.io v0.22.2 // indirect

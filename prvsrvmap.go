@@ -1,10 +1,9 @@
 package main
 
 import (
-//	"context"
+	//	"context"
 	"log"
-
-//	nodecapi "github.com/synerex/synerex_nodeserv_controlapi"
+	//	nodecapi "github.com/synerex/synerex_nodeserv_controlapi"
 )
 
 type NodeServInfo struct {
@@ -20,7 +19,6 @@ type ChangeServInfo struct {
 var ConnectionMap = make([]NodeServInfo, 0, 1)
 var ChangeSrvList = make([]ChangeServInfo, 0, 1)
 
-
 func UpdateConnectionMap(PrvId int32, SrvId int32) {
 
 	existFlag := false
@@ -34,7 +32,7 @@ func UpdateConnectionMap(PrvId int32, SrvId int32) {
 	if !existFlag {
 		ConnectionMap = append(ConnectionMap, NodeServInfo{
 			PrvNodeId: PrvId,
-			SrvNodeId: SrvId } )
+			SrvNodeId: SrvId})
 	}
 
 }
@@ -55,10 +53,13 @@ func GetServerIdForPrv(PrvId int32) int32 {
 		if PrvId == ChangeSrvList[k].PrvId {
 			SrvId := ChangeSrvList[k].SrvId
 			ChangeSrvList = append(ChangeSrvList[:k], ChangeSrvList[k+1:]...)
-			return(SrvId)
+			return (SrvId)
 		}
 	}
-	return sxProfile[0].NodeId
+	if len(sxProfile) > 0 {
+		return sxProfile[0].NodeId
+	}
+	return 0 // default server is 0.
 }
 
 func IsServerChangeRequest(PrvId int32) bool {
@@ -66,7 +67,7 @@ func IsServerChangeRequest(PrvId int32) bool {
 	for k := range ChangeSrvList {
 		if PrvId == ChangeSrvList[k].PrvId {
 			log.Printf("ServerChangeRequest for %d connected to %d\n ",
-					ChangeSrvList[k].PrvId, ChangeSrvList[k].SrvId)
+				ChangeSrvList[k].PrvId, ChangeSrvList[k].SrvId)
 			return true
 		}
 	}
@@ -79,4 +80,3 @@ func AddServerChangeRequest(PrvId, SrvId int32) {
 		SrvId: SrvId,
 	})
 }
-

@@ -17,7 +17,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
 	"github.com/google/gops/agent"
+
 	nodepb "github.com/synerex/synerex_nodeapi"
 	nodecapi "github.com/synerex/synerex_nodeserv_controlapi"
 	"google.golang.org/grpc"
@@ -46,18 +48,19 @@ const defaultNodeInfoFile = "nodeinfo.json"
 const defaultSxProfile = "sxprofile.json"
 
 type eachNodeInfo struct {
-	NodeName     string          `json:"name"`
-	NodePBase    string          `json:"nodepbase"`
-	Secret       uint64          `json:"secret"`
-	Address      string          `json:"address"`
-	NodeType     nodepb.NodeType `json:"nodeType"`
-	ServerInfo   string          `json:"serverInfo"`
-	ChannelTypes []uint32        `json:"channels"`
-	LastAlive    time.Time       `json:"lastAlive"`
-	Count        int32           `json:"count"`
-	Status       int32           `json:"status"`
-	Arg          string          `json:"arg"`
-	Duration     int32           `json:"duration"` // duration for checking next time
+	NodeName       string          `json:"name"`
+	NodePBase      string          `json:"nodepbase"`
+	NodeBinVersion string          `json:"nodebinver"`
+	Secret         uint64          `json:"secret"`
+	Address        string          `json:"address"`
+	NodeType       nodepb.NodeType `json:"nodeType"`
+	ServerInfo     string          `json:"serverInfo"`
+	ChannelTypes   []uint32        `json:"channels"`
+	LastAlive      time.Time       `json:"lastAlive"`
+	Count          int32           `json:"count"`
+	Status         int32           `json:"status"`
+	Arg            string          `json:"arg"`
+	Duration       int32           `json:"duration"` // duration for checking next time
 }
 
 type SynerexServerInfo struct {
@@ -306,7 +309,7 @@ func (s *srvNodeInfo) listNodes() {
 	for i := range nk {
 		eni := s.nodeMap[nk[i]]
 		sub := time.Now().Sub(eni.LastAlive) / time.Second
-		log.Printf("%2d[%1d]%20s %5s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeType, eni.NodeName, eni.NodePBase, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
+		log.Printf("%2d[%1d]%20s %-6.6s %-7.7s %14s %3d %2d:%3d %s\n", nk[i], eni.NodeType, eni.NodeName, eni.NodePBase, eni.NodeBinVersion, eni.Address, int(sub), eni.Count, eni.Status, eni.Arg)
 	}
 	nmmu.RUnlock()
 }
@@ -351,9 +354,9 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		_, ok := s.nodeMap[ni.WithNodeId]
 		if ok {
 			nn := getNextNodeID(ni.NodeType)
-			log.Printf("Duplicated node id request. Ignore %d and assign id %d",ni.WithNodeId, nn)
+			log.Printf("Duplicated node ID request. Ignore %d and assign id %d", ni.WithNodeId, nn)
 			n = nn
-		}else {
+		} else {
 			n = ni.WithNodeId
 		}
 	}
@@ -372,15 +375,17 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 		ipaddr = "0.0.0.0"
 	}
 	eni := eachNodeInfo{
-		NodeName:     ni.NodeName,
-		NodePBase:    ni.NodePbaseVersion,
-		NodeType:     ni.NodeType,
-		Secret:       r,
-		Address:      ipaddr,
-		ServerInfo:   ni.ServerInfo,
-		ChannelTypes: ni.ChannelTypes,
-		LastAlive:    time.Now(),
-		Duration:     DefaultDuration,
+		NodeName:       ni.NodeName,
+		NodePBase:      ni.NodePbaseVersion,
+		NodeBinVersion: ni.BinVersion,
+		NodeType:       ni.NodeType,
+		Secret:         r,
+		Address:        ipaddr,
+		ServerInfo:     ni.ServerInfo,
+		ChannelTypes:   ni.ChannelTypes,
+		LastAlive:      time.Now(),
+
+		Duration: DefaultDuration,
 	}
 
 	log.Println("Node Connection from :", ipaddr, ",", ni.NodeName)
@@ -609,6 +614,7 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeCo
 				NodeType = nodepb.NodeType_GATEWAY
 			}
 
+			lastTime, _ := ptypes.TimestampProto(nif.LastAlive)
 			ninfo = append(ninfo, nodecapi.NodeControlInfo{
 				NodeInfo: &nodepb.NodeInfo{
 					NodeName:         nif.NodeName,
@@ -620,6 +626,10 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeCo
 					AreaId:           AreaId,
 					ChannelTypes:     nif.ChannelTypes,
 					GwInfo:           "",
+					BinVersion:       nif.NodeBinVersion,
+					Count:            nif.Count,
+					LastAliveTime:    lastTime,
+					KeepaliveArg:     nif.Arg,
 				},
 				NodeId:   n,
 				ServerId: ServerId,
