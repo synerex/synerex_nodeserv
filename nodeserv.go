@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -86,6 +87,7 @@ type srvNodeInfo struct {
 
 var (
 	port       = flag.Int("port", 9990, "Node Server Listening Port")
+	verbose    = flag.Bool("verbose", false, "show detailed modules information")
 	restart    = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
 	srvInfo    srvNodeInfo
 	sxProfile        = make([]SynerexServerInfo, 0, 1)
@@ -258,12 +260,12 @@ func keepNodes(s *srvNodeInfo) {
 		if len(killNodes) > 0 {
 			// remove nodes
 			// flush nodelist
-			log.Printf("Kill Nodes by SynerexServer Timeout %#v",killNodes)
+			log.Printf("Kill Nodes by SynerexServer Timeout %#v", killNodes)
 			for _, k := range killNodes {
 				// we need to remove k from sxProfile
 				ni := s.nodeMap[k]
 				if ni.NodeType == nodepb.NodeType_SERVER { // remove server from sxProfile
-					for jj, sv := range sxProfile{
+					for jj, sv := range sxProfile {
 						if sv.NodeId == k {
 							sxProfile = append(sxProfile[:jj], sxProfile[jj+1:]...)
 							break
@@ -425,7 +427,7 @@ func (s *srvNodeInfo) RegisterNode(cx context.Context, ni *nodepb.NodeInfo) (nid
 	saveNodeMap(s)
 
 	if ni.NodeType == nodepb.NodeType_PROVIDER {
-		UpdateConnectionMap(n,ServerId)
+		UpdateConnectionMap(n, ServerId)
 	}
 
 	return nid, nil
@@ -476,7 +478,7 @@ func (s *srvNodeInfo) KeepAlive(ctx context.Context, nu *nodepb.NodeUpdate) (nr 
 	}
 
 	if ni.NodeType == nodepb.NodeType_SERVER { // if there is pending nodes, send them!
-//		log.Printf("KeepAlive from Server %#v", ni)
+		//		log.Printf("KeepAlive from Server %#v", ni)
 		for i := range sxProfile {
 			if sxProfile[i].NodeId == nid {
 				if len(sxProfile[i].PendingNodes) > 0 {
@@ -541,37 +543,37 @@ func (s *srvNodeInfo) UnRegisterNode(cx context.Context, nid *nodepb.NodeID) (nr
 func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeControlFilter) (ni *nodecapi.NodeControlInfos, e error) {
 	var ninfo = make([]nodecapi.NodeControlInfo, 0, 1)
 
-	var ServerId  int32
+	var ServerId int32
 	var ClusterId int32
-	var AreaId    string
-	var NodeType  nodepb.NodeType
+	var AreaId string
+	var NodeType nodepb.NodeType
 
 	ns := nodecapi.NodeControlInfos{
-		Infos:                nil,
+		Infos: nil,
 	}
 
 	ns.Infos = make([]*nodecapi.NodeControlInfo, 0)
 
 	all_flag := true
 	if filter.NodeType == nodepb.NodeType_SERVER ||
-	   filter.NodeType == nodepb.NodeType_PROVIDER ||
-	   filter.NodeType == nodepb.NodeType_GATEWAY  {
+		filter.NodeType == nodepb.NodeType_PROVIDER ||
+		filter.NodeType == nodepb.NodeType_GATEWAY {
 		all_flag = false
 	}
 
 	count := 0
 	for n, nif := range s.nodeMap {
 		if all_flag ||
-		   ( filter.NodeType == nodepb.NodeType_PROVIDER &&
-		     nif.NodeType == nodepb.NodeType_PROVIDER ) ||
-		   ( filter.NodeType == nodepb.NodeType_SERVER &&
-		     nif.NodeType == nodepb.NodeType_SERVER ) ||
-		   ( filter.NodeType == nodepb.NodeType_GATEWAY &&
-		     nif.NodeType == nodepb.NodeType_GATEWAY ) {
+			(filter.NodeType == nodepb.NodeType_PROVIDER &&
+				nif.NodeType == nodepb.NodeType_PROVIDER) ||
+			(filter.NodeType == nodepb.NodeType_SERVER &&
+				nif.NodeType == nodepb.NodeType_SERVER) ||
+			(filter.NodeType == nodepb.NodeType_GATEWAY &&
+				nif.NodeType == nodepb.NodeType_GATEWAY) {
 
-			ServerId  = n
+			ServerId = n
 			ClusterId = 0
-			AreaId    = ""
+			AreaId = ""
 
 			if nif.NodeType == nodepb.NodeType_PROVIDER {
 				NodeType = nodepb.NodeType_PROVIDER
@@ -580,8 +582,8 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeCo
 				NodeType = nodepb.NodeType_SERVER
 				for k, sx := range sxProfile {
 					if sx.NodeId == n {
-						ClusterId    = sxProfile[k].ClusterId
-						AreaId       = sxProfile[k].AreaId
+						ClusterId = sxProfile[k].ClusterId
+						AreaId = sxProfile[k].AreaId
 						break
 					}
 				}
@@ -589,8 +591,8 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeCo
 				NodeType = nodepb.NodeType_GATEWAY
 			}
 
-			ninfo = append(ninfo, nodecapi.NodeControlInfo {
-				NodeInfo: &nodepb.NodeInfo {
+			ninfo = append(ninfo, nodecapi.NodeControlInfo{
+				NodeInfo: &nodepb.NodeInfo{
 					NodeName:         nif.NodeName,
 					NodeType:         NodeType,
 					ServerInfo:       nif.ServerInfo,
@@ -601,11 +603,11 @@ func (s *srvNodeInfo) QueryNodeInfos(cx context.Context, filter *nodecapi.NodeCo
 					ChannelTypes:     nif.ChannelTypes,
 					GwInfo:           "",
 				},
-				NodeId:           n,
-				ServerId:         ServerId,
+				NodeId:   n,
+				ServerId: ServerId,
 			})
 			ns.Infos = append(ns.Infos, &ninfo[count])
-			count = count+1
+			count = count + 1
 		}
 	}
 
@@ -622,7 +624,7 @@ func (s *srvNodeInfo) ControlNodes(ctx context.Context, in *nodecapi.Order) (res
 	}
 
 	r := nodecapi.NodeControlResponse{
-		Ok:                   true,
+		Ok: true,
 	}
 	return &r, nil
 }
@@ -655,9 +657,28 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
+	// get debug information
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		if *verbose {
+			log.Printf("Nodeserv version %s(%s)", bi.Main.Path, bi.Main.Version)
+			for i := range bi.Deps {
+				m := bi.Deps[i]
+				log.Printf("%d: %s(%s)", i, m.Path, m.Version)
+			}
+
+		} else {
+			log.Printf("Nodeserv version %s(%s)", bi.Main.Path, bi.Main.Version)
+		}
+		//
+	} else {
+		log.Printf("Can't obtain build info.")
+	}
+
 	var opts []grpc.ServerOption
 
 	nodeServer := prepareGrpcServer(opts...)
+
 	log.Printf("Starting Node Server: Waiting Connection at port :%d ...", *port)
 
 	nodeServer.Serve(lis)
