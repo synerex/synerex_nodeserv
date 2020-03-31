@@ -1,1 +1,1 @@
-PowerShell -file build.ps1
+PowerShell -ExecutionPolicy RemoteSigned -file build.ps1
