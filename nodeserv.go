@@ -110,7 +110,7 @@ var (
 )
 
 func init() {
-	log.Println("Starting Node Server..")
+	//	log.Println("Starting Node Server..")
 	rand.Seed(time.Now().UnixNano())
 	s := &srvInfo
 	s.nodeMap = make(map[int32]*eachNodeInfo)
