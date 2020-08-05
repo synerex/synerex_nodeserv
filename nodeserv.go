@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -90,10 +91,11 @@ type srvNodeInfo struct {
 }
 
 var (
-	port       = flag.Int("port", 9990, "Node Server Listening Port")
-	version    = flag.Bool("version", false, "show version")
-	verbose    = flag.Bool("verbose", false, "show detailed modules information")
-	restart    = flag.Bool("restart", false, "Restart flag: if true, load nodeinfo.json ")
+	port       = flag.Int("port", getNodeservPort(), "Node Server Listening Port")
+	addr       = flag.String("addr", getNodeservHostName(), "Node Server Listening Address")
+	version    = flag.Bool("version", getVersion(), "show version")
+	verbose    = flag.Bool("verbose", getVerbose(), "show detailed modules information")
+	restart    = flag.Bool("restart", getRestart(), "Restart flag: if true, load nodeinfo.json ")
 	srvInfo    srvNodeInfo
 	sxProfile        = make([]SynerexServerInfo, 0, 1)
 	lastNode   int32 = MaxServerID // start ID from MAX_SERVER_ID to MAX_NODE_NUM
@@ -108,6 +110,52 @@ var (
 	buildTime string // when the executable was built
 	gitver    string // git release tag
 )
+
+func getNodeservPort() int {
+	env := os.Getenv("SX_NODESERV_PORT")
+	if env != "" {
+		env, _ := strconv.Atoi(env)
+		return env
+	} else {
+		return 9990
+	}
+}
+
+func getNodeservHostName() string {
+	env := os.Getenv("SX_NODESERV_HOST")
+	if env != "" {
+		return env
+	} else {
+		return "127.0.0.1"
+	}
+}
+
+func getVersion() bool {
+	env := os.Getenv("SX_NODESERV_VERSION")
+	if env == "true" {
+		return true
+	} else {
+		return false
+	}
+}
+
+func getVerbose() bool {
+	env := os.Getenv("SX_NODESERV_VERBOSE")
+	if env == "true" {
+		return true
+	} else {
+		return false
+	}
+}
+
+func getRestart() bool {
+	env := os.Getenv("SX_NODESERV_RESTART")
+	if env == "true" {
+		return true
+	} else {
+		return false
+	}
+}
 
 func init() {
 	//	log.Println("Starting Node Server..")
@@ -699,7 +747,7 @@ func main() {
 	}
 
 	//	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *port))
-	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *addr, *port))
 
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
