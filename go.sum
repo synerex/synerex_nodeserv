@@ -46,6 +46,8 @@ github.com/synerex/synerex_nodeapi v0.5.4 h1:pR7lFvHv+1mplP1xvyDm8nh1vRNXhS4Rgkc
 github.com/synerex/synerex_nodeapi v0.5.4/go.mod h1:qvLv2rOnYQAsfeAL7QGn0cXPxA1RMgzg3fEGgmFtLBw=
 github.com/synerex/synerex_nodeserv_controlapi v0.1.0 h1:Yru1EDSbPaM7nz1e+KeYlZa74yvNEEM7GpEqXuCGQzc=
 github.com/synerex/synerex_nodeserv_controlapi v0.1.0/go.mod h1:Vl1sOBnnGQ4NM9XRrcOQ/Psm4CsxE35KtxLvNZncs+Q=
+github.com/synerex/synerex_nodeserv_controlapi v0.1.1 h1:OoM5VrKMgLMCnwU0+C/hApufyaOroKVvZbcAYI+mOI4=
+github.com/synerex/synerex_nodeserv_controlapi v0.1.1/go.mod h1:avKKqxN7jHzIw1+9rLa7V7M9nhygkALhNhhNxGOY0Ek=
 github.com/xlab/treeprint v1.0.0/go.mod h1:IoImgRak9i3zJyuxOKUP1v4UZd1tMoKkq/Cimt1uhCg=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=
