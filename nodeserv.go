@@ -258,9 +258,9 @@ func saveSxProfile() {
 
 // saving nodemap
 func saveNodeMap(s *srvNodeInfo) {
-	nodeLists := make([]nodeInfo, len(s.nodeMap))
 	//	file, err  := os.OpenFile(defaultNodeInfoFile, os.O_CREATE,  )
 	nmmu.Lock()
+	nodeLists := make([]nodeInfo, len(s.nodeMap))
 	i := 0
 	for k, nif := range s.nodeMap {
 		nodeLists[i] = nodeInfo{NodeId: k, Info: *nif}
@@ -268,7 +268,7 @@ func saveNodeMap(s *srvNodeInfo) {
 	}
 	bytes, err := json.MarshalIndent(nodeLists, "", "  ")
 	if err != nil {
-		panic(0)
+		log.Println("Can't Marshal NodeInfo data! ", ferr)
 	}
 	ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666)
 	if ferr != nil {
