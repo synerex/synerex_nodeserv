@@ -268,13 +268,14 @@ func saveNodeMap(s *srvNodeInfo) {
 	}
 	bytes, err := json.MarshalIndent(nodeLists, "", "  ")
 	if err != nil {
-		log.Println("Can't Marshal NodeInfo data! ", ferr)
+		log.Println("Can't Marshal NodeInfo data! ", err)
+	} else {
+		ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666)
+		if ferr != nil {
+			log.Println("Error on writing nodeinfo.json ", ferr)
+		}
+		saveSxProfile()
 	}
-	ferr := ioutil.WriteFile(defaultNodeInfoFile, bytes, 0666)
-	if ferr != nil {
-		log.Println("Error on writing nodeinfo.json ", ferr)
-	}
-	saveSxProfile()
 	nmmu.Unlock()
 }
 
