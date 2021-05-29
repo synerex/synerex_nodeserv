@@ -45,7 +45,6 @@ github.com/shirou/gopsutil/v3 v3.21.2/go.mod h1:ghfMypLDrFSWN2c9cDYFLHyynQ+QUht0
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/synerex/synerex_nodeapi v0.5.4 h1:pR7lFvHv+1mplP1xvyDm8nh1vRNXhS4RgkcHGoBaRzM=
 github.com/synerex/synerex_nodeapi v0.5.4/go.mod h1:qvLv2rOnYQAsfeAL7QGn0cXPxA1RMgzg3fEGgmFtLBw=
 github.com/synerex/synerex_nodeapi v0.5.5 h1:RLwDofe1cEssxV7xy6C0XcksOFQTJhU4UFPJ0IPuzrY=
 github.com/synerex/synerex_nodeapi v0.5.5/go.mod h1:OsrMk0ke+KrZplzqLp0AGV85vLiiJUSBiytjnHv0nOc=
